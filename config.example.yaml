@@ -1,0 +1,58 @@
+# Polymarket Agent Example Configuration
+# Copy this to config.yaml and customize as needed
+
+# Market filtering configuration
+filters:
+  # Categories to include (empty = all categories)
+  categories:
+    - politics
+    - crypto
+  
+  # Keywords to search for in market titles/descriptions
+  keywords: []
+  
+  # Keywords to exclude
+  exclude_keywords: []
+  
+  # Minimum trading volume in USD
+  min_volume: 10000
+  
+  # Minimum market liquidity in USD
+  min_liquidity: 5000
+  
+  # Maximum days until market resolution
+  max_days_to_expiry: 60
+  
+  # Geographic regions to focus on
+  # Options: US, EU, UK, ASIA, CRYPTO, GLOBAL
+  geographic_regions: []
+
+# Risk tolerance: conservative, moderate, aggressive
+# - conservative: Only high-confidence mispricings (>20% deviation)
+# - moderate: Balanced approach (>10% deviation)
+# - aggressive: Include speculative opportunities (>5% deviation)
+risk_tolerance: moderate
+
+# LLM configuration
+llm:
+  # Model to use for market assessment
+  # Options:
+  #   - claude-sonnet-4-5-20250514 (Anthropic - recommended)
+  #   - claude-opus-4-5-20250514 (Anthropic - highest quality)
+  #   - gpt-5.2 (OpenAI)
+  #   - gemini-2.0-pro (Google)
+  #   - gemini-2.0-flash (Google - fastest)
+  model: claude-sonnet-4-5-20250514
+
+# Processing limits
+max_markets_to_fetch: 500
+enrichment_limit: 20
+llm_analysis_limit: 15
+
+# Output configuration
+output_dir: output
+output_format: both  # json, csv, or both
+
+# Debugging
+verbose: false
+dry_run: false
