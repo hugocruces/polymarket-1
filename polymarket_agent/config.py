@@ -112,16 +112,16 @@ LLM_MODELS = {
         "display_name": "GPT-5.2",
         "max_tokens": 4096,
     },
-    "gemini-2.0-pro": {
-        "provider": LLMProvider.GOOGLE,
-        "model_id": "gemini-2.0-pro",
-        "display_name": "Gemini Pro",
-        "max_tokens": 4096,
-    },
     "gemini-2.0-flash": {
         "provider": LLMProvider.GOOGLE,
         "model_id": "gemini-2.0-flash",
-        "display_name": "Gemini Flash",
+        "display_name": "Gemini 2.0 Flash",
+        "max_tokens": 4096,
+    },
+    "gemini-1.5-pro": {
+        "provider": LLMProvider.GOOGLE,
+        "model_id": "gemini-1.5-pro",
+        "display_name": "Gemini 1.5 Pro",
         "max_tokens": 4096,
     },
 }
@@ -153,6 +153,7 @@ class FilterConfig:
     min_liquidity: float = DEFAULT_MIN_LIQUIDITY
     max_days_to_expiry: int = DEFAULT_MAX_DAYS_TO_EXPIRY
     geographic_regions: list[str] = field(default_factory=list)
+    tag_ids: list[int] = field(default_factory=list)  # Filter by Polymarket tag IDs
     min_outcomes: int = 2
     max_outcomes: Optional[int] = None
 

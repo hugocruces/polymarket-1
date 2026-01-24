@@ -249,6 +249,7 @@ class PolymarketAgent:
         try:
             events = await fetch_active_events(
                 limit=self.config.max_markets_to_fetch // 5,  # Events contain multiple markets
+                tag_ids=self.config.filters.tag_ids,
             )
             
             for event in events:

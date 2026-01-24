@@ -242,7 +242,7 @@ class GoogleClient(LLMClient):
     Docs: https://ai.google.dev/docs
     """
     
-    def __init__(self, model: str = "gemini-2.0-pro", api_key: Optional[str] = None):
+    def __init__(self, model: str = "gemini-2.0-flash", api_key: Optional[str] = None):
         super().__init__(model, api_key)
         self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
         self._client = None
@@ -318,7 +318,7 @@ def get_llm_client(
     Automatically selects the correct provider based on the model name.
     
     Args:
-        model: Model identifier (e.g., "claude-sonnet-4-5-20250514", "gpt-5.2", "gemini-2.0-pro")
+        model: Model identifier (e.g., "claude-sonnet-4-5-20250514", "gpt-5.2", "gemini-2.0-flash")
         api_key: Optional API key (uses environment variable if not provided)
         
     Returns:

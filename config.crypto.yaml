@@ -1,0 +1,53 @@
+# Example: Filter Crypto Markets by Geography
+# This configuration focuses on cryptocurrency markets
+
+filters:
+  categories: []
+  
+  # Keywords related to crypto
+  keywords:
+    - Bitcoin
+    - BTC
+    - Ethereum
+    - ETH
+    - crypto
+    - cryptocurrency
+  
+  exclude_keywords: []
+  
+  # Minimum trading volume in USD
+  min_volume: 25000
+  
+  # Minimum market liquidity in USD  
+  min_liquidity: 5000
+  
+  # Maximum days until market resolution
+  max_days_to_expiry: 365
+  
+  # Geographic filtering (keyword matching)
+  geographic_regions: []
+  
+  # Filter by Polymarket tag ID
+  # Tag 21 = "Crypto"
+  tag_ids:
+    - 21
+
+# Risk tolerance settings
+risk_tolerance: aggressive
+
+# LLM configuration
+llm:
+  model: claude-sonnet-4-5-20250514
+
+# Processing limits
+max_markets_to_fetch: 500
+enrichment_limit: 20
+llm_analysis_limit: 15
+
+# Output configuration
+output_dir: output
+output_format: both
+
+# Debugging
+verbose: false
+dry_run: false

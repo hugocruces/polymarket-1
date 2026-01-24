@@ -4,28 +4,47 @@
 # Market filtering configuration
 filters:
   # Categories to include (empty = all categories)
-  categories:
-    - politics
-    - crypto
+  # Note: Polymarket API doesn't provide explicit categories, 
+  # so this uses keyword matching on market titles
+  categories: []
   
   # Keywords to search for in market titles/descriptions
-  keywords: []
+  # Use this to filter by topic (e.g., Trump, Bitcoin, election)
+  keywords:
+    - Trump
   
   # Keywords to exclude
   exclude_keywords: []
   
   # Minimum trading volume in USD
-  min_volume: 10000
+  min_volume: 1000
   
   # Minimum market liquidity in USD
-  min_liquidity: 5000
+  min_liquidity: 50
   
   # Maximum days until market resolution
-  max_days_to_expiry: 60
+  max_days_to_expiry: 360
   
-  # Geographic regions to focus on
+  # Geographic regions to focus on (uses keyword matching on market text)
   # Options: US, EU, UK, ASIA, CRYPTO, GLOBAL
   geographic_regions: []
+  
+  # Filter by Polymarket tag IDs (more precise than keyword matching)
+  # Get tag IDs from: https://gamma-api.polymarket.com/tags
+  # Or use: python scripts/list_tags.py --search "keyword"
+  # 
+  # Common active tags:
+  #   - 2: "Politics" (most active)
+  #   - 101191: "Trump Presidency"
+  #   - 126: "Trump"
+  #   - 96: "Ukraine"
+  #   - 21: "Crypto"
+  #   - 450: "NFL"
+  #   - 101970: "World"
+  #   - 100265: "Geopolitics"
+  #
+  # Note: Can only filter by ONE tag_id at a time via the API
+  tag_ids: []
 
 # Risk tolerance: conservative, moderate, aggressive
 # - conservative: Only high-confidence mispricings (>20% deviation)
@@ -51,7 +70,7 @@ llm_analysis_limit: 15
 
 # Output configuration
 output_dir: output
-output_format: both  # json, csv, or both
+output_format: report.json  # json, csv, or both
 
 # Debugging
 verbose: false

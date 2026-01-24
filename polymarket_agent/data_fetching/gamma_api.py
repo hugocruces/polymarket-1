@@ -118,55 +118,80 @@ def _parse_market(data: dict, event_data: Optional[dict] = None) -> Market:
     Returns:
         Parsed Market object
     """
+    import json as json_module
+    
     # Parse outcomes from various possible formats
     outcomes = []
     
     # Try parsing from outcomes array
-    if "outcomes" in data and isinstance(data["outcomes"], list):
+    if "outcomes" in data:
         outcome_names = data["outcomes"]
-        outcome_prices = data.get("outcomePrices", [])
         
-        # Handle case where outcomePrices is a string (JSON)
-        if isinstance(outcome_prices, str):
+        # Handle case where outcomes is a JSON string
+        if isinstance(outcome_names, str):
             try:
-                import json
-                outcome_prices = json.loads(outcome_prices)
+                outcome_names = json_module.loads(outcome_names)
             except:
-                outcome_prices = []
+                outcome_names = []
         
-        # Get token IDs if available
-        clob_token_ids = data.get("clobTokenIds", [])
-        if isinstance(clob_token_ids, str):
-            try:
-                import json
-                clob_token_ids = json.loads(clob_token_ids)
-            except:
-                clob_token_ids = []
-        
-        for i, name in enumerate(outcome_names):
-            price = float(outcome_prices[i]) if i < len(outcome_prices) else 0.5
-            token_id = clob_token_ids[i] if i < len(clob_token_ids) else ""
-            outcomes.append(Outcome(
-                name=str(name),
-                token_id=str(token_id),
-                price=price,
-            ))
+        if isinstance(outcome_names, list):
+            outcome_prices = data.get("outcomePrices", [])
+            
+            # Handle case where outcomePrices is a string (JSON)
+            if isinstance(outcome_prices, str):
+                try:
+                    outcome_prices = json_module.loads(outcome_prices)
+                except:
+                    outcome_prices = []
+            
+            # Get token IDs if available
+            clob_token_ids = data.get("clobTokenIds", [])
+            if isinstance(clob_token_ids, str):
+                try:
+                    clob_token_ids = json_module.loads(clob_token_ids)
+                except:
+                    clob_token_ids = []
+            
+            for i, name in enumerate(outcome_names):
+                price = float(outcome_prices[i]) if i < len(outcome_prices) else 0.5
+                token_id = clob_token_ids[i] if i < len(clob_token_ids) else ""
+                outcomes.append(Outcome(
+                    name=str(name),
+                    token_id=str(token_id),
+                    price=price,
+                ))
     
-    # Parse tags
-    tags = data.get("tags", [])
-    if isinstance(tags, str):
-        tags = [t.strip() for t in tags.split(",") if t.strip()]
+    # Parse tags - handle various formats
+    raw_tags = data.get("tags", [])
+    tags = []
+    if isinstance(raw_tags, str):
+        tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
+    elif isinstance(raw_tags, list):
+        for t in raw_tags:
+            if isinstance(t, str):
+                tags.append(t.strip())
+            elif isinstance(t, dict) and "label" in t:
+                tags.append(str(t["label"]))
+            elif isinstance(t, dict) and "name" in t:
+                tags.append(str(t["name"]))
     
     # Determine category (use first tag or explicit category)
     category = ""
-    if "category" in data:
-        category = data["category"]
+    raw_category = data.get("category", "")
+    if isinstance(raw_category, str):
+        category = raw_category
+    elif isinstance(raw_category, dict):
+        category = str(raw_category.get("label", raw_category.get("name", "")))
     elif tags:
         category = tags[0]
     elif event_data and "tags" in event_data:
         event_tags = event_data["tags"]
         if isinstance(event_tags, list) and event_tags:
-            category = event_tags[0]
+            first_tag = event_tags[0]
+            if isinstance(first_tag, str):
+                category = first_tag
+            elif isinstance(first_tag, dict):
+                category = str(first_tag.get("label", first_tag.get("name", "")))
     
     # Parse volume - handle various field names
     volume = 0.0
@@ -256,6 +281,7 @@ async def fetch_active_events(
     offset: int = 0,
     order: str = "volume",
     ascending: bool = False,
+    tag_ids: Optional[list[int]] = None,
 ) -> list[Event]:
     """
     Fetch active events from the Gamma API.
@@ -268,6 +294,7 @@ async def fetch_active_events(
         offset: Pagination offset
         order: Field to order by (volume, createdAt, endDate)
         ascending: Sort ascending if True, descending if False
+        tag_ids: Filter by specific tag IDs (only first tag used)
         
     Returns:
         List of Event objects
@@ -291,6 +318,10 @@ async def fetch_active_events(
                 "order": order,
                 "ascending": str(ascending).lower(),
             }
+            
+            # Add tag_id filter if provided (API only supports one tag at a time)
+            if tag_ids and len(tag_ids) > 0:
+                params["tag_id"] = str(tag_ids[0])
             
             logger.debug(f"Fetching events: offset={current_offset}, limit={page_size}")
             

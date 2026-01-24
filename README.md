@@ -103,9 +103,17 @@ filters:
   min_volume: 10000
   min_liquidity: 5000
   max_days_to_expiry: 30
+  
+  # Filter by geographical region (keyword matching)
   geographic_regions:
     - US
     - EU
+  
+  # Filter by Polymarket tag IDs (more precise)
+  # Get tag IDs with: python scripts/list_tags.py --search politics
+  tag_ids:
+    - 589      # US presidential election 2024
+    - 101768   # European
 
 risk_tolerance: moderate  # conservative, moderate, aggressive
 
@@ -113,6 +121,42 @@ llm:
   provider: anthropic
   model: claude-sonnet-4-5-20250514
 ```
+
+### Geographical Filtering
+
+The agent supports two methods for filtering markets by geography:
+
+**Method 1: Keyword Matching** (Less precise)
+```yaml
+filters:
+  geographic_regions:
+    - US    # Matches "United States", "American", etc.
+    - EU    # Matches "Europe", "European Union", etc.
+    - UK    # Matches "United Kingdom", "British", etc.
+```
+
+**Method 2: Tag IDs** (More precise, recommended)
+```yaml
+filters:
+  tag_ids:
+    - 2        # Politics (most active category)
+    - 101191   # Trump Presidency  
+    - 96       # Ukraine
+    - 21       # Crypto
+```
+
+To discover available tags:
+```bash
+# List all tags
+python scripts/list_tags.py
+
+# Search for specific tags
+python scripts/list_tags.py --search "election"
+python scripts/list_tags.py --search "europe"
+python scripts/list_tags.py --search "asia"
+```
+
+**Note**: The Polymarket API only supports filtering by ONE tag_id at a time. If you specify multiple tag IDs, only the first one will be used.
 
 ## Usage
 
@@ -178,8 +222,8 @@ for market in results.ranked_markets:
 | Anthropic | `claude-sonnet-4-5-20250514` | Recommended for balance of speed/quality |
 | Anthropic | `claude-opus-4-5-20250514` | Highest quality, slower |
 | OpenAI | `gpt-5.2` | Strong reasoning capabilities |
-| Google | `gemini-2.0-pro` | Good for factual analysis |
-| Google | `gemini-2.0-flash` | Fastest, good for high volume |
+| Google | `gemini-2.0-flash` | Good for factual analysis |
+| Google | `gemini-1.5-pro` | Highest quality Google model |
 
 ### Choosing a Model
 

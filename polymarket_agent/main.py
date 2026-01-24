@@ -169,6 +169,12 @@ def build_config(args: argparse.Namespace) -> AgentConfig:
         if args.risk_tolerance != "moderate":
             config.risk_tolerance = RiskTolerance(args.risk_tolerance)
         
+        # Always override dry_run and verbose from CLI
+        if args.dry_run:
+            config.dry_run = True
+        if args.verbose:
+            config.verbose = True
+        
         return config
     
     # Build from CLI arguments
