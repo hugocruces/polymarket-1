@@ -94,55 +94,86 @@ RISK_THRESHOLDS = {
 
 # LLM Model mappings
 LLM_MODELS = {
-    "claude-sonnet-4-5-20250514": {
+    # ==========================================================================
+    # Anthropic Claude Models (Latest)
+    # ==========================================================================
+    "claude-sonnet-4-5": {
         "provider": LLMProvider.ANTHROPIC,
-        "model_id": "claude-sonnet-4-5-20250514",
+        "model_id": "claude-sonnet-4-5-20250929",
         "display_name": "Claude Sonnet 4.5",
-        "max_tokens": 4096,
+        "max_tokens": 64000,
     },
-    "claude-opus-4-5-20250514": {
+    "claude-haiku-4-5": {
         "provider": LLMProvider.ANTHROPIC,
-        "model_id": "claude-opus-4-5-20250514",
-        "display_name": "Claude Opus 4.5",
-        "max_tokens": 4096,
+        "model_id": "claude-haiku-4-5-20251001",
+        "display_name": "Claude Haiku 4.5",
+        "max_tokens": 64000,
     },
+    "claude-opus-4-5": {
+        "provider": LLMProvider.ANTHROPIC,
+        "model_id": "claude-opus-4-5-20251101",
+        "display_name": "Claude Opus 4.5",
+        "max_tokens": 64000,
+    },
+
+    # ==========================================================================
+    # OpenAI Models (Latest)
+    # ==========================================================================
     "gpt-5.2": {
         "provider": LLMProvider.OPENAI,
-        "model_id": "gpt-5.2",
+        "model_id": "gpt-5.2-2025-12-11",
         "display_name": "GPT-5.2",
-        "max_tokens": 4096,
+        "max_tokens": 128000,
     },
-    "gemini-2.0-flash": {
-        "provider": LLMProvider.GOOGLE,
-        "model_id": "gemini-2.0-flash",
-        "display_name": "Gemini 2.0 Flash",
-        "max_tokens": 4096,
+    "gpt-5-mini": {
+        "provider": LLMProvider.OPENAI,
+        "model_id": "gpt-5-mini-2025-08-07",
+        "display_name": "GPT-5 Mini",
+        "max_tokens": 128000,
     },
-    "gemini-1.5-pro": {
+
+    # ==========================================================================
+    # Google Gemini Models (Latest)
+    # ==========================================================================
+    "gemini-3-pro-preview": {
         "provider": LLMProvider.GOOGLE,
-        "model_id": "gemini-1.5-pro",
-        "display_name": "Gemini 1.5 Pro",
-        "max_tokens": 4096,
+        "model_id": "gemini-3-pro-preview",
+        "display_name": "Gemini 3 Pro (Preview)",
+        "max_tokens": 8192,
+    },
+    "gemini-3-flash-preview": {
+        "provider": LLMProvider.GOOGLE,
+        "model_id": "gemini-3-flash-preview",
+        "display_name": "Gemini 3 Flash (Preview)",
+        "max_tokens": 8192,
     },
 }
 
 # Default model
-DEFAULT_LLM_MODEL = "claude-sonnet-4-5-20250514"
+DEFAULT_LLM_MODEL = "claude-sonnet-4-5"
 
 
 @dataclass
 class FilterConfig:
     """
     Configuration for market filtering criteria.
-    
+
     Attributes:
         categories: List of category/tag names to include (e.g., ["politics", "crypto"])
         keywords: Keywords to search for in title/description
         exclude_keywords: Keywords to exclude from results
         min_volume: Minimum trading volume in USD
+        max_volume: Maximum trading volume in USD (None = no limit).
+            Useful for finding potentially mispriced low-volume markets.
         min_liquidity: Minimum market liquidity in USD
+        max_liquidity: Maximum market liquidity in USD (None = no limit)
         max_days_to_expiry: Maximum days until market resolution
-        geographic_regions: Filter by geographic relevance (e.g., ["US", "EU"])
+        geographic_regions: Filter by geographic relevance. Available regions:
+            US, EU, UK, ASIA, LATAM, MIDDLE_EAST, AFRICA, CRYPTO, GLOBAL
+        geo_min_score: Minimum confidence score (0-100) for geographic matching.
+            - 30 (default): Include if any moderate keyword matches
+            - 50: Require strong indicator or multiple matches
+            - 70: Require definitive indicator (e.g., "United States Congress")
         min_outcomes: Minimum number of outcomes (default 2)
         max_outcomes: Maximum number of outcomes (None = no limit)
     """
@@ -150,12 +181,23 @@ class FilterConfig:
     keywords: list[str] = field(default_factory=list)
     exclude_keywords: list[str] = field(default_factory=list)
     min_volume: float = DEFAULT_MIN_VOLUME
+    max_volume: Optional[float] = None  # None = no upper limit
     min_liquidity: float = DEFAULT_MIN_LIQUIDITY
+    max_liquidity: Optional[float] = None  # None = no upper limit
     max_days_to_expiry: int = DEFAULT_MAX_DAYS_TO_EXPIRY
     geographic_regions: list[str] = field(default_factory=list)
+    geo_min_score: float = 30.0  # Minimum score for geographic filtering
     tag_ids: list[int] = field(default_factory=list)  # Filter by Polymarket tag IDs
     min_outcomes: int = 2
     max_outcomes: Optional[int] = None
+    # Reasoning analysis filters
+    reasoning_heavy_only: bool = False  # Only include reasoning-heavy markets
+    min_reasoning_score: float = 20.0  # Minimum reasoning score (0-100)
+    llm_edge_levels: list[str] = field(default_factory=lambda: ["high", "medium"])  # Filter by LLM edge likelihood
+    # Demographic bias filters (based on Polymarket user demographics research)
+    bias_filter_enabled: bool = False  # Filter for markets with demographic bias potential
+    min_blind_spot_score: float = 10.0  # Minimum blind spot score (0-100), lower = more inclusive
+    mispricing_levels: list[str] = field(default_factory=lambda: ["high", "medium"])  # Filter by mispricing likelihood
 
 
 @dataclass
@@ -171,7 +213,7 @@ class AgentConfig:
         enrichment_limit: Maximum markets to enrich with web search
         llm_analysis_limit: Maximum markets to analyze with LLM
         output_dir: Directory for output reports
-        output_format: Output format(s) - "json", "csv", or "both"
+        output_format: Output format(s) - "json", "csv", "markdown", or "both" (json+csv)
         verbose: Enable verbose logging
         dry_run: Skip LLM calls, only fetch and filter
     """
@@ -182,7 +224,7 @@ class AgentConfig:
     enrichment_limit: int = DEFAULT_ENRICHMENT_LIMIT
     llm_analysis_limit: int = DEFAULT_LLM_ANALYSIS_LIMIT
     output_dir: str = "output"
-    output_format: str = "both"  # "json", "csv", or "both"
+    output_format: str = "both"  # "json", "csv", "markdown", or "both"
     verbose: bool = False
     dry_run: bool = False
     

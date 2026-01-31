@@ -9,13 +9,13 @@ Usage:
 Examples:
     # Basic run
     python -m polymarket_agent.main
-    
+
     # With specific model
-    python -m polymarket_agent.main --model claude-opus-4-5-20250514
-    
+    python -m polymarket_agent.main --model claude-opus-4-5
+
     # With filters
     python -m polymarket_agent.main --categories politics crypto --min-volume 10000
-    
+
     # Dry run (no LLM calls)
     python -m polymarket_agent.main --dry-run
 """
@@ -29,6 +29,7 @@ from polymarket_agent.config import (
     FilterConfig,
     RiskTolerance,
     LLM_MODELS,
+    DEFAULT_LLM_MODEL,
 )
 from polymarket_agent.agent import PolymarketAgent
 
@@ -40,7 +41,7 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s --model claude-sonnet-4-5-20250514
+  %(prog)s --model claude-sonnet-4-5
   %(prog)s --categories politics --min-volume 50000
   %(prog)s --risk-tolerance aggressive --limit 20
   %(prog)s --dry-run  # Quick scan without LLM calls
@@ -53,8 +54,8 @@ Examples:
     llm_group.add_argument(
         "--model", "-m",
         choices=list(LLM_MODELS.keys()),
-        default="claude-sonnet-4-5-20250514",
-        help="LLM model to use for assessment (default: claude-sonnet-4-5-20250514)",
+        default=DEFAULT_LLM_MODEL,
+        help=f"LLM model to use for assessment (default: {DEFAULT_LLM_MODEL})",
     )
     
     # Filtering
@@ -84,10 +85,23 @@ Examples:
         help="Minimum trading volume in USD (default: 1000)",
     )
     filter_group.add_argument(
+        "--max-volume",
+        type=float,
+        default=None,
+        help="Maximum trading volume in USD (default: no limit). "
+             "Use to find potentially mispriced low-volume markets.",
+    )
+    filter_group.add_argument(
         "--min-liquidity",
         type=float,
         default=500,
         help="Minimum liquidity in USD (default: 500)",
+    )
+    filter_group.add_argument(
+        "--max-liquidity",
+        type=float,
+        default=None,
+        help="Maximum liquidity in USD (default: no limit)",
     )
     filter_group.add_argument(
         "--max-days",
@@ -99,9 +113,45 @@ Examples:
         "--regions",
         nargs="+",
         default=[],
-        help="Filter by geographic regions (US, EU, UK, ASIA, CRYPTO, GLOBAL)",
+        help="Filter by geographic regions (US, EU, UK, ASIA, LATAM, MIDDLE_EAST, AFRICA, CRYPTO, GLOBAL)",
     )
-    
+    filter_group.add_argument(
+        "--reasoning-heavy",
+        action="store_true",
+        help="Only include reasoning-heavy markets (where LLM analysis may have edge)",
+    )
+    filter_group.add_argument(
+        "--min-reasoning-score",
+        type=float,
+        default=20,
+        help="Minimum reasoning score for --reasoning-heavy filter (default: 20)",
+    )
+    filter_group.add_argument(
+        "--llm-edge",
+        nargs="+",
+        choices=["high", "medium", "low", "unlikely"],
+        default=["high", "medium"],
+        help="Filter by LLM edge likelihood (default: high medium)",
+    )
+    filter_group.add_argument(
+        "--bias-filter",
+        action="store_true",
+        help="Filter for markets with demographic bias potential (mispricing due to user blind spots)",
+    )
+    filter_group.add_argument(
+        "--min-blind-spot-score",
+        type=float,
+        default=10,
+        help="Minimum blind spot score for --bias-filter (default: 10)",
+    )
+    filter_group.add_argument(
+        "--mispricing-levels",
+        nargs="+",
+        choices=["high", "medium", "low"],
+        default=["high", "medium"],
+        help="Filter by mispricing likelihood (default: high medium)",
+    )
+
     # Risk and Scoring
     risk_group = parser.add_argument_group("Risk Configuration")
     risk_group.add_argument(
@@ -121,7 +171,7 @@ Examples:
     )
     output_group.add_argument(
         "--format", "-f",
-        choices=["json", "csv", "both"],
+        choices=["json", "csv", "markdown", "both"],
         default="both",
         help="Output format (default: both)",
     )
@@ -160,7 +210,7 @@ def build_config(args: argparse.Namespace) -> AgentConfig:
         config = AgentConfig.from_yaml(args.config)
         
         # Override with CLI args if specified
-        if args.model != "claude-sonnet-4-5-20250514":
+        if args.model != DEFAULT_LLM_MODEL:
             config.llm_model = args.model
         if args.categories:
             config.filters.categories = args.categories
@@ -183,9 +233,17 @@ def build_config(args: argparse.Namespace) -> AgentConfig:
         keywords=args.keywords,
         exclude_keywords=args.exclude_keywords,
         min_volume=args.min_volume,
+        max_volume=args.max_volume,
         min_liquidity=args.min_liquidity,
+        max_liquidity=args.max_liquidity,
         max_days_to_expiry=args.max_days,
         geographic_regions=args.regions,
+        reasoning_heavy_only=args.reasoning_heavy,
+        min_reasoning_score=args.min_reasoning_score,
+        llm_edge_levels=args.llm_edge,
+        bias_filter_enabled=args.bias_filter,
+        min_blind_spot_score=args.min_blind_spot_score,
+        mispricing_levels=args.mispricing_levels,
     )
     
     return AgentConfig(
@@ -224,7 +282,15 @@ def main():
     if config.filters.keywords:
         print(f"Keywords: {', '.join(config.filters.keywords)}")
     
-    print(f"Min Volume: ${config.filters.min_volume:,.0f}")
+    # Volume range display
+    if config.filters.max_volume:
+        print(f"Volume Range: ${config.filters.min_volume:,.0f} - ${config.filters.max_volume:,.0f}")
+    else:
+        print(f"Min Volume: ${config.filters.min_volume:,.0f}")
+
+    if config.filters.geographic_regions:
+        print(f"Regions: {', '.join(config.filters.geographic_regions)}")
+
     print(f"Dry Run: {config.dry_run}")
     print("=" * 60)
     

@@ -11,38 +11,44 @@ This agent performs one-off analysis runs to identify potential mispricings in p
 - **Enrichment**: Web search to gather relevant external context
 - **LLM Assessment**: Uses your choice of LLM to estimate fair probabilities
 - **Scoring**: Ranks markets by mispricing magnitude, confidence, and risk profile
-- **Reporting**: Outputs structured JSON/CSV reports
+- **Reporting**: Outputs structured Markdown reports (also JSON/CSV)
 
 ## Architecture
 
 ```
 polymarket_agent/
 ├── __init__.py
-├── config.py           # Configuration and constants
-├── data_fetching/      # Polymarket API interactions
+├── config.py              # Configuration and constants
+├── data_fetching/         # Polymarket API interactions
 │   ├── __init__.py
-│   ├── gamma_api.py    # Gamma API for events/markets
-│   └── clob_api.py     # CLOB API for prices/orderbooks
-├── filtering/          # Market filtering logic
+│   ├── gamma_api.py       # Gamma API for events/markets
+│   ├── clob_api.py        # CLOB API for prices/orderbooks
+│   └── models.py          # Data models (Market, ScoredMarket, etc.)
+├── filtering/             # Market filtering logic
 │   ├── __init__.py
 │   └── filters.py
-├── enrichment/         # External data enrichment
+├── enrichment/            # External data enrichment
 │   ├── __init__.py
 │   └── web_search.py
-├── llm_assessment/     # LLM integration
+├── llm_assessment/        # LLM integration
 │   ├── __init__.py
-│   ├── providers.py    # Multi-provider LLM support
-│   └── prompts.py      # Prompt templates
-├── scoring/            # Scoring and ranking
+│   ├── assessor.py        # LLM assessment orchestration
+│   ├── providers.py       # Multi-provider LLM support
+│   └── prompts.py         # Prompt templates
+├── analysis/              # Market analysis utilities
+│   ├── __init__.py
+│   ├── reasoning_classifier.py  # Reasoning-heavy market detection
+│   └── demographic_bias.py      # Demographic bias scoring
+├── scoring/               # Scoring and ranking
 │   ├── __init__.py
 │   └── scorer.py
-├── reporting/          # Output generation
+├── reporting/             # Output generation
 │   ├── __init__.py
 │   └── reporter.py
-├── utils/              # Shared utilities
+├── utils/                 # Shared utilities
 │   ├── __init__.py
 │   └── helpers.py
-└── main.py             # Main orchestrator
+└── main.py                # CLI entry point
 ```
 
 ## Installation
@@ -94,69 +100,96 @@ Filters can be set via CLI arguments, config file, or programmatically:
 ```yaml
 # config.yaml example
 filters:
-  categories:
-    - politics
-    - crypto
+  # Keywords matched against market titles (questions)
   keywords:
-    - election
-    - bitcoin
-  min_volume: 10000
-  min_liquidity: 5000
-  max_days_to_expiry: 30
-  
-  # Filter by geographical region (keyword matching)
-  geographic_regions:
-    - US
-    - EU
-  
-  # Filter by Polymarket tag IDs (more precise)
-  # Get tag IDs with: python scripts/list_tags.py --search politics
-  tag_ids:
-    - 589      # US presidential election 2024
-    - 101768   # European
+    - Trump
+    - Bitcoin
+    - Election
+    - Spain
+
+  # Keywords to exclude (e.g., sports markets)
+  exclude_keywords:
+    - NFL
+    - NBA
+    - La Liga
+
+  min_volume: 100
+  max_volume: 500000
+  min_liquidity: 50
+  max_days_to_expiry: 360
+
+  # Demographic bias filter
+  bias_filter_enabled: true
+  min_blind_spot_score: 10
+  mispricing_levels:
+    - high
+    - medium
 
 risk_tolerance: moderate  # conservative, moderate, aggressive
 
 llm:
-  provider: anthropic
-  model: claude-sonnet-4-5-20250514
+  model: gemini-3-flash-preview
 ```
 
 ### Geographical Filtering
 
-The agent supports two methods for filtering markets by geography:
+The agent uses **weighted keyword matching** to infer market geographic relevance. Each keyword has a confidence weight (1-10), and markets are scored based on matches.
 
-**Method 1: Keyword Matching** (Less precise)
+**Available Regions:**
+
+| Region        | Description    | Example Keywords                                    |
+| ------------- | -------------- | --------------------------------------------------- |
+| `US`          | United States  | congress, federal reserve, biden, trump, california |
+| `EU`          | European Union | european commission, ecb, macron, scholz, eurozone  |
+| `UK`          | United Kingdom | parliament, bank of england, starmer, london        |
+| `ASIA`        | Asia-Pacific   | china, japan, korea, india, xi jinping, modi        |
+| `LATAM`       | Latin America  | brazil, mexico, argentina, lula, milei              |
+| `MIDDLE_EAST` | Middle East    | israel, iran, saudi, netanyahu, opec                |
+| `AFRICA`      | Africa         | south africa, nigeria, kenya, african union         |
+| `CRYPTO`      | Cryptocurrency | bitcoin, ethereum, defi, binance, blockchain        |
+| `GLOBAL`      | International  | united nations, imf, g20, nato, climate             |
+
+**Configuration:**
 ```yaml
 filters:
   geographic_regions:
-    - US    # Matches "United States", "American", etc.
-    - EU    # Matches "Europe", "European Union", etc.
-    - UK    # Matches "United Kingdom", "British", etc.
+    - US
+    - EU
+
+  # Confidence threshold (0-100)
+  # - 30: Any moderate match (default)
+  # - 50: Strong indicator required
+  # - 70: Definitive match only
+  geo_min_score: 50
 ```
 
-**Method 2: Tag IDs** (More precise, recommended)
+**How Scoring Works:**
+- Keywords have weights 1-10 (e.g., "United States Congress" = 10, "Trump" = 7)
+- Score combines highest weight match + bonus for multiple matches
+- Markets must meet `geo_min_score` threshold to be included
+
+**Tag-Based Filtering** (Alternative)
+
+For topic-based filtering, use Polymarket's tag system. Note: the Polymarket API only supports filtering by **one** `tag_id` at a time.
 ```yaml
 filters:
   tag_ids:
-    - 2        # Politics (most active category)
-    - 101191   # Trump Presidency  
-    - 96       # Ukraine
-    - 21       # Crypto
+    - 2        # Politics
 ```
 
 To discover available tags:
 ```bash
-# List all tags
-python scripts/list_tags.py
-
-# Search for specific tags
 python scripts/list_tags.py --search "election"
-python scripts/list_tags.py --search "europe"
-python scripts/list_tags.py --search "asia"
 ```
 
-**Note**: The Polymarket API only supports filtering by ONE tag_id at a time. If you specify multiple tag IDs, only the first one will be used.
+### Niche Market Discovery
+
+If you are looking for niche topics (e.g., regional elections in Spain) that don't have massive volume relative to US presidential elections, they may be buried deep in the list of active markets.
+
+To ensure the agent "sees" these markets:
+1.  **Increase `max_markets_to_fetch`**: Change this in `config.yaml` to `30000` or `40000`. This allows the agent to scan a larger portion of the many active markets on Polymarket.
+2.  **Use Targeted Tag IDs**: If you know the tag (e.g., `101768` for "European"), specify it in `tag_ids` to force the API to return those events first.
+3.  **Use Specific Keywords**: The agent will now attempt to use your first keyword as a search query during data fetching to improve discovery.
 
 ## Usage
 
@@ -167,14 +200,17 @@ python scripts/list_tags.py --search "asia"
 python -m polymarket_agent.main
 
 # Specify LLM model
-python -m polymarket_agent.main --model claude-sonnet-4-5-20250514
+python -m polymarket_agent.main --model claude-sonnet-4-5
 
 # With filters
 python -m polymarket_agent.main \
   --categories politics crypto \
   --min-volume 10000 \
   --risk-tolerance aggressive \
-  --output report.json
+  --output output
+
+# Markdown output format
+python -m polymarket_agent.main --format markdown
 
 # Using config file
 python -m polymarket_agent.main --config config.yaml
@@ -197,8 +233,7 @@ config = AgentConfig(
         keywords=["election"]
     ),
     risk_tolerance=RiskTolerance.MODERATE,
-    llm_provider="anthropic",
-    llm_model="claude-sonnet-4-5-20250514"
+    llm_model="claude-sonnet-4-5"
 )
 
 # Run analysis
@@ -207,29 +242,26 @@ results = agent.run()
 
 # Access results
 for market in results.ranked_markets:
-    print(f"{market.title}: {market.mispricing_score:.2f}")
-    print(f"  Market: {market.market_probability:.1%}")
-    print(f"  LLM Est: {market.llm_probability_range}")
-    print(f"  Rationale: {market.explanation}")
+    print(f"{market.market.question}: {market.total_score:.1f}")
+    print(f"  Market: Yes @ {market.market.outcome_prices.get('Yes', 0):.1%}")
+    est = market.assessment.probability_estimates.get("Yes", (0, 0))
+    print(f"  LLM Est: {est[0]:.1%}-{est[1]:.1%}")
+    print(f"  Rationale: {market.assessment.reasoning[:200]}")
 ```
 
 ## Model Selection
 
 ### Supported Models
 
-| Provider | Model ID | Notes |
-|----------|----------|-------|
-| Anthropic | `claude-sonnet-4-5-20250514` | Recommended for balance of speed/quality |
-| Anthropic | `claude-opus-4-5-20250514` | Highest quality, slower |
-| OpenAI | `gpt-5.2` | Strong reasoning capabilities |
-| Google | `gemini-2.0-flash` | Good for factual analysis |
-| Google | `gemini-1.5-pro` | Highest quality Google model |
-
-### Choosing a Model
-
-- **For thorough analysis**: Use Claude Opus 4.5 or GPT-5.2
-- **For balanced speed/quality**: Use Claude Sonnet 4.5 or Gemini Pro
-- **For quick scans**: Use Gemini Flash
+| Provider  | Model ID                 | Notes                                    |
+| --------- | ------------------------ | ---------------------------------------- |
+| Anthropic | `claude-sonnet-4-5`      | Recommended for balance of speed/quality |
+| Anthropic | `claude-haiku-4-5`       | Fastest, most cost-effective             |
+| Anthropic | `claude-opus-4-5`        | Highest quality, slower                  |
+| OpenAI    | `gpt-5.2`                | Flagship model                           |
+| OpenAI    | `gpt-5-mini`             | Fast/efficient                           |
+| Google    | `gemini-3-flash-preview` | Fast Google model                        |
+| Google    | `gemini-3-pro-preview`   | High quality Google model                |
 
 ## Interpreting Results
 
@@ -237,13 +269,13 @@ for market in results.ranked_markets:
 
 The overall attractiveness score (0-100) combines:
 
-| Component | Weight | Description |
-|-----------|--------|-------------|
-| Mispricing Magnitude | 30% | Difference between market and estimated probability |
-| Model Confidence | 25% | LLM's self-reported confidence in estimate |
-| Evidence Strength | 20% | Quality/freshness of supporting information |
-| Liquidity Score | 15% | Ability to enter/exit position |
-| Risk Adjustment | 10% | Adjusted based on risk tolerance |
+| Component            | Weight | Description                                         |
+| -------------------- | ------ | --------------------------------------------------- |
+| Mispricing Magnitude | 30%    | Difference between market and estimated probability |
+| Model Confidence     | 25%    | LLM's self-reported confidence in estimate          |
+| Evidence Strength    | 20%    | Quality/freshness of supporting information         |
+| Liquidity Score      | 15%    | Ability to enter/exit position                      |
+| Risk Adjustment      | 10%    | Adjusted based on risk tolerance                    |
 
 ### Risk Tolerance Effects
 
@@ -253,8 +285,11 @@ The overall attractiveness score (0-100) combines:
 
 ### Output Fields
 
+The Markdown report includes a rankings table and detailed per-market analysis. The underlying `ScoredMarket.to_dict()` output looks like:
+
 ```json
 {
+  "rank": 1,
   "market_slug": "will-x-happen",
   "title": "Will X happen by date Y?",
   "category": "politics",
@@ -265,9 +300,20 @@ The overall attractiveness score (0-100) combines:
   "mispricing_magnitude": 0.15,
   "confidence": 0.72,
   "explanation": "Based on recent polling data...",
+  "key_factors": ["Recent polling shift", "Historical precedent"],
+  "risks": ["Limited sample size"],
   "evidence_sources": ["source1.com", "source2.com"],
-  "risk_score": 35,
-  "attractiveness_rank": 1,
+  "volume": 245000,
+  "liquidity": 180000,
+  "days_to_expiry": 30,
+  "scores": {
+    "mispricing": 78.5,
+    "confidence": 65.0,
+    "evidence": 55.0,
+    "liquidity": 70.0,
+    "risk_adjusted": 60.0,
+    "total": 68.2
+  },
   "warnings": ["Limited historical data available"]
 }
 ```
@@ -306,19 +352,19 @@ The overall attractiveness score (0-100) combines:
 ```bash
 $ python -m polymarket_agent.main --categories politics --min-volume 50000 --limit 5
 
-🔍 Fetching active markets from Polymarket...
+Fetching active markets from Polymarket...
    Found 247 active markets
 
-📊 Applying filters...
+Applying filters...
    After filtering: 23 markets
 
-🔎 Enriching top candidates with web search...
+Enriching top candidates with web search...
    Enriched 10 markets with external context
 
-🤖 Running LLM assessment (claude-sonnet-4-5-20250514)...
+Running LLM assessment (claude-sonnet-4-5)...
    Analyzed 10 markets
 
-📈 Scoring and ranking results...
+Scoring and ranking results...
 
 ═══════════════════════════════════════════════════════════════
 TOP 5 POTENTIALLY MISPRICED MARKETS
@@ -338,7 +384,7 @@ TOP 5 POTENTIALLY MISPRICED MARKETS
 
 ...
 
-📁 Full report saved to: output/report_2026-01-24_143052.json
+Full report saved to: output/report_2026-01-24_143052.md
 ```
 
 ## Testing

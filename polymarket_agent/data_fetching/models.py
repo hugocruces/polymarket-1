@@ -29,8 +29,10 @@ class Outcome:
     def __post_init__(self):
         """Validate price is in valid range."""
         if not 0.0 <= self.price <= 1.0:
-            # Prices sometimes come as percentages, normalize
-            if 0 <= self.price <= 100:
+            # Prices sometimes come as whole-number percentages (e.g. 65 meaning 65%).
+            # Values >= 2 are unambiguously percentages; values like 1.5 are just
+            # slightly out-of-range probabilities that should be clamped.
+            if self.price >= 2 and self.price <= 100:
                 self.price = self.price / 100.0
             else:
                 # Clamp to valid range
@@ -96,7 +98,7 @@ class Market:
         """Calculate days until market resolution."""
         if self.end_date is None:
             return None
-        delta = self.end_date - datetime.now()
+        delta = self.end_date.date() - datetime.now().date()
         return max(0, delta.days)
     
     @property

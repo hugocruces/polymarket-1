@@ -52,7 +52,7 @@ class PolymarketAgent:
         >>> from polymarket_agent import PolymarketAgent, AgentConfig
         >>> 
         >>> config = AgentConfig(
-        ...     llm_model="claude-sonnet-4-5-20250514",
+        ...     llm_model="claude-sonnet-4-5",
         ...     risk_tolerance=RiskTolerance.MODERATE,
         ... )
         >>> agent = PolymarketAgent(config)
@@ -135,6 +135,7 @@ class PolymarketAgent:
         
         # Step 2: Filter markets
         print("📊 Applying filters...")
+        
         filter_result = self.filter.apply(markets)
         filtered_markets = filter_result.markets
         print(f"   {filter_result.total_before} -> {filter_result.total_after} markets after filtering\n")
@@ -152,6 +153,13 @@ class PolymarketAgent:
                 errors=["No markets passed filters"],
             )
         
+        # When bias filter is enabled, prioritize markets with higher blind spot scores
+        if self.config.filters.bias_filter_enabled:
+            filtered_markets.sort(
+                key=lambda m: (m.raw_data or {}).get('_blind_spot_score', 0),
+                reverse=True,
+            )
+
         # Limit for enrichment and assessment
         candidates = filtered_markets[:self.config.enrichment_limit]
         
@@ -242,14 +250,22 @@ class PolymarketAgent:
         Fetch markets from Polymarket APIs.
         
         Tries events endpoint first, falls back to markets endpoint.
+        Uses keywords from filters to perform targeted API search if available.
         """
         all_markets = []
+        
+        # Use first keyword as search query if available
+        search_query = None
+        if self.config.filters.keywords:
+            search_query = self.config.filters.keywords[0]
+            logger.info(f"Using search query from config: '{search_query}'")
         
         # Try fetching via events (includes more metadata)
         try:
             events = await fetch_active_events(
                 limit=self.config.max_markets_to_fetch // 5,  # Events contain multiple markets
                 tag_ids=self.config.filters.tag_ids,
+                query=search_query,
             )
             
             for event in events:
@@ -265,6 +281,7 @@ class PolymarketAgent:
             try:
                 direct_markets = await fetch_active_markets(
                     limit=self.config.max_markets_to_fetch - len(all_markets),
+                    query=search_query,
                 )
                 
                 # Deduplicate by ID

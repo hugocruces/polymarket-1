@@ -23,36 +23,213 @@ logger = logging.getLogger(__name__)
 
 
 # Geographic keywords for inferring market geography
-GEOGRAPHY_KEYWORDS = {
+# Keywords are weighted: higher weight = stronger regional indicator
+# Format: (keyword, weight) where weight is 1-10
+# Weight 10: Definitive (e.g., "United States Congress")
+# Weight 7-9: Strong indicator (e.g., country names, major institutions)
+# Weight 4-6: Moderate indicator (e.g., politicians, cities)
+# Weight 1-3: Weak indicator (e.g., terms that could be ambiguous)
+
+GEOGRAPHY_KEYWORDS_WEIGHTED = {
     "US": [
-        "united states", "america", "american", "u.s.", "usa", "biden", "trump",
-        "congress", "senate", "house of representatives", "federal reserve",
-        "democrat", "republican", "gop", "white house", "supreme court",
-        "california", "texas", "florida", "new york", "washington",
+        # Definitive indicators (10)
+        ("united states", 10), ("u.s. congress", 10), ("u.s. senate", 10),
+        ("u.s. house", 10), ("american president", 10), ("us federal", 10),
+        # Strong indicators (7-9)
+        ("america", 8), ("american", 7), ("u.s.", 8), ("usa", 9),
+        ("federal reserve", 9), ("the fed", 7), ("fomc", 9),
+        ("white house", 9), ("oval office", 9), ("supreme court", 8),
+        ("congress", 8), ("senate", 7), ("house of representatives", 9),
+        ("democrat", 7), ("republican", 7), ("gop", 8), ("dnc", 9), ("rnc", 9),
+        ("pentagon", 9), ("cia", 8), ("fbi", 8), ("sec", 6), ("cftc", 8),
+        ("medicare", 9), ("medicaid", 9), ("social security", 8),
+        # Politicians (6-8)
+        ("biden", 8), ("trump", 7), ("kamala harris", 8), ("desantis", 8),
+        ("newsom", 7), ("pence", 7), ("pelosi", 8), ("mcconnell", 8),
+        ("schumer", 8), ("aoc", 7), ("bernie sanders", 8), ("ted cruz", 8),
+        ("ron paul", 8), ("elon musk", 5), ("jd vance", 8), ("rfk", 7),
+        # States and cities (5-7)
+        ("california", 6), ("texas", 6), ("florida", 6), ("new york", 5),
+        ("washington dc", 8), ("washington d.c.", 8), ("wall street", 6),
+        ("silicon valley", 6), ("hollywood", 5), ("las vegas", 5),
+        ("chicago", 5), ("los angeles", 5), ("miami", 5), ("boston", 5),
+        # Sports/Culture (4-6)
+        ("nfl", 6), ("nba", 6), ("mlb", 6), ("nhl", 5), ("super bowl", 7),
+        ("march madness", 7), ("world series", 6), ("stanley cup", 5),
+        ("oscars", 6), ("grammy", 6), ("emmy", 6), ("tony awards", 6),
     ],
     "EU": [
-        "european", "europe", "eu", "euro", "ecb", "european central bank",
-        "germany", "france", "italy", "spain", "netherlands", "belgium",
-        "brussels", "macron", "scholz", "european commission", "eurozone",
+        # Definitive indicators (10)
+        ("european union", 10), ("european commission", 10), ("european parliament", 10),
+        ("eurozone", 10), ("schengen", 9),
+        # Strong indicators (7-9)
+        ("europe", 7), ("european", 7), ("eu", 7), ("euro", 6),
+        ("ecb", 9), ("european central bank", 10),
+        ("brussels", 8), ("strasbourg", 8),
+        # Countries (7-8)
+        ("germany", 8), ("german", 7), ("france", 8), ("french", 6),
+        ("italy", 8), ("italian", 6), ("spain", 8), ("spanish", 6),
+        ("netherlands", 8), ("dutch", 7), ("belgium", 8), ("belgian", 7),
+        ("austria", 8), ("poland", 8), ("portugal", 8), ("greece", 8),
+        ("ireland", 7), ("sweden", 8), ("finland", 8), ("denmark", 8),
+        # Politicians (6-8)
+        ("macron", 8), ("scholz", 8), ("von der leyen", 9), ("draghi", 8),
+        ("meloni", 8), ("sanchez", 7), ("rutte", 7), ("orban", 7),
+        # Cities (5-7)
+        ("paris", 5), ("berlin", 6), ("rome", 5), ("madrid", 5),
+        ("amsterdam", 5), ("vienna", 5), ("frankfurt", 6), ("munich", 5),
+        # Institutions (7-9)
+        ("bundesbank", 9), ("bundestag", 9), ("élysée", 9), ("reichstag", 8),
     ],
     "UK": [
-        "united kingdom", "britain", "british", "uk", "england", "scotland",
-        "wales", "london", "parliament", "prime minister", "labour", "tory",
-        "conservative", "starmer", "sunak", "westminster",
+        # Definitive indicators (10)
+        ("united kingdom", 10), ("british parliament", 10), ("house of commons", 10),
+        ("house of lords", 10), ("westminster", 9), ("downing street", 10),
+        # Strong indicators (7-9)
+        ("britain", 9), ("british", 8), ("uk", 8), ("england", 7),
+        ("scotland", 8), ("scottish", 7), ("wales", 8), ("welsh", 7),
+        ("northern ireland", 9),
+        ("bank of england", 10), ("boe", 8), ("nhs", 8),
+        ("labour party", 9), ("conservative party", 9), ("tory", 8), ("tories", 8),
+        ("lib dem", 8), ("snp", 8),
+        # Politicians (6-8)
+        ("starmer", 8), ("sunak", 8), ("truss", 7), ("johnson", 5),
+        ("king charles", 8), ("prince william", 7), ("royal family", 7),
+        ("farage", 8), ("corbyn", 7),
+        # Cities (5-7)
+        ("london", 6), ("manchester", 6), ("birmingham", 5), ("edinburgh", 7),
+        ("glasgow", 6), ("cardiff", 6), ("belfast", 7), ("liverpool", 5),
+        # Institutions/Events (6-8)
+        ("premier league", 7), ("wimbledon", 7), ("the ashes", 8),
+        ("ftse", 8), ("city of london", 7), ("canary wharf", 6),
     ],
     "ASIA": [
-        "china", "chinese", "japan", "japanese", "korea", "korean",
-        "india", "indian", "asia", "asian", "beijing", "tokyo", "shanghai",
-        "xi jinping", "modi", "boj", "pboc",
+        # China (7-10)
+        ("china", 9), ("chinese", 8), ("beijing", 8), ("shanghai", 7),
+        ("hong kong", 8), ("taiwan", 8), ("taiwanese", 8),
+        ("xi jinping", 9), ("ccp", 9), ("communist party of china", 10),
+        ("pboc", 9), ("people's bank of china", 10),
+        ("shenzhen", 7), ("guangzhou", 6), ("tiananmen", 8),
+        # Japan (7-10)
+        ("japan", 9), ("japanese", 8), ("tokyo", 7), ("osaka", 6),
+        ("boj", 9), ("bank of japan", 10), ("yen", 6),
+        ("kishida", 8), ("abe", 7), ("nikkei", 8),
+        # Korea (7-10)
+        ("south korea", 9), ("north korea", 10), ("korean", 7),
+        ("seoul", 7), ("pyongyang", 9), ("kim jong", 10),
+        ("samsung", 6), ("hyundai", 6), ("k-pop", 5),
+        # India (7-10)
+        ("india", 9), ("indian", 7), ("mumbai", 7), ("delhi", 7),
+        ("modi", 8), ("bjp", 8), ("rbi", 8), ("reserve bank of india", 10),
+        ("bollywood", 6), ("sensex", 8),
+        # Southeast Asia (6-8)
+        ("singapore", 8), ("indonesia", 8), ("vietnam", 8), ("thailand", 7),
+        ("philippines", 8), ("malaysia", 8), ("asean", 9),
+        # General (5-7)
+        ("asia", 7), ("asian", 6), ("asia-pacific", 8), ("apac", 7),
+    ],
+    "LATAM": [
+        # Definitive indicators (9-10)
+        ("latin america", 10), ("south america", 9), ("central america", 9),
+        # Countries (7-9)
+        ("brazil", 9), ("brazilian", 8), ("mexico", 9), ("mexican", 8),
+        ("argentina", 9), ("argentine", 8), ("colombia", 8), ("colombian", 7),
+        ("chile", 8), ("chilean", 7), ("peru", 8), ("venezuela", 9),
+        ("cuba", 8), ("cuban", 7), ("puerto rico", 7),
+        # Politicians (7-8)
+        ("lula", 8), ("bolsonaro", 8), ("amlo", 8), ("milei", 8),
+        ("maduro", 9), ("bukele", 8),
+        # Cities (5-7)
+        ("são paulo", 7), ("sao paulo", 7), ("rio de janeiro", 7),
+        ("mexico city", 7), ("buenos aires", 7), ("bogota", 6),
+        ("lima", 6), ("santiago", 6), ("caracas", 7), ("havana", 7),
+        # Institutions (7-8)
+        ("mercosur", 9), ("petrobras", 8), ("pemex", 8),
+    ],
+    "MIDDLE_EAST": [
+        # Definitive indicators (9-10)
+        ("middle east", 10), ("mideast", 9),
+        # Countries (7-9)
+        ("israel", 9), ("israeli", 8), ("palestine", 9), ("palestinian", 8),
+        ("iran", 9), ("iranian", 8), ("iraq", 9), ("iraqi", 8),
+        ("saudi arabia", 9), ("saudi", 8), ("uae", 8), ("dubai", 7),
+        ("qatar", 8), ("kuwait", 8), ("bahrain", 8), ("oman", 8),
+        ("jordan", 7), ("lebanon", 8), ("lebanese", 7), ("syria", 9), ("syrian", 8),
+        ("turkey", 8), ("turkish", 7), ("egypt", 8), ("egyptian", 7),
+        # Politicians/Leaders (7-9)
+        ("netanyahu", 9), ("khamenei", 9), ("erdogan", 8), ("mbs", 8),
+        ("mohammed bin salman", 9), ("sisi", 8), ("assad", 9),
+        # Cities (6-8)
+        ("jerusalem", 8), ("tel aviv", 8), ("tehran", 8), ("riyadh", 8),
+        ("abu dhabi", 7), ("doha", 7), ("cairo", 7), ("istanbul", 6),
+        ("gaza", 9), ("west bank", 9), ("golan", 8),
+        # Institutions/Conflicts (8-10)
+        ("opec", 9), ("idf", 9), ("hamas", 10), ("hezbollah", 10),
+        ("irgc", 9), ("mossad", 9), ("abraham accords", 9),
+    ],
+    "AFRICA": [
+        # Definitive indicators (9-10)
+        ("africa", 9), ("african", 8), ("sub-saharan", 10),
+        ("african union", 10),
+        # Countries (7-9)
+        ("south africa", 9), ("nigeria", 9), ("nigerian", 8),
+        ("kenya", 8), ("kenyan", 7), ("ethiopia", 8), ("egyptian", 7),
+        ("ghana", 8), ("morocco", 8), ("algeria", 8), ("tanzania", 8),
+        ("uganda", 8), ("zimbabwe", 8), ("congo", 8), ("sudan", 8),
+        ("libya", 8), ("libyan", 7), ("tunisia", 8),
+        # Politicians (7-8)
+        ("ramaphosa", 8), ("tinubu", 8), ("ruto", 8),
+        # Cities (5-7)
+        ("johannesburg", 7), ("lagos", 7), ("nairobi", 7), ("cairo", 7),
+        ("cape town", 7), ("addis ababa", 7), ("casablanca", 6),
+        # Institutions (7-8)
+        ("anc", 8), ("ecowas", 9),
     ],
     "CRYPTO": [
-        "bitcoin", "ethereum", "crypto", "blockchain", "btc", "eth",
-        "defi", "nft", "solana", "binance", "coinbase", "sec crypto",
+        # Definitive indicators (9-10)
+        ("cryptocurrency", 10), ("crypto market", 10), ("blockchain", 9),
+        ("decentralized finance", 10), ("defi", 9),
+        # Major coins (7-9)
+        ("bitcoin", 9), ("btc", 8), ("ethereum", 9), ("eth", 7),
+        ("solana", 8), ("sol", 6), ("cardano", 8), ("ada", 5),
+        ("ripple", 8), ("xrp", 7), ("dogecoin", 8), ("doge", 7),
+        ("litecoin", 8), ("polkadot", 8), ("avalanche", 7), ("polygon", 7),
+        ("chainlink", 8), ("uniswap", 8), ("aave", 8),
+        # Stablecoins (7-9)
+        ("tether", 8), ("usdt", 8), ("usdc", 8), ("dai", 7),
+        # Exchanges/Platforms (7-9)
+        ("binance", 9), ("coinbase", 9), ("kraken", 8), ("ftx", 8),
+        ("opensea", 8), ("metamask", 8), ("ledger", 7),
+        # Concepts (6-8)
+        ("nft", 8), ("smart contract", 8), ("web3", 8), ("dao", 7),
+        ("staking", 7), ("mining", 5), ("halving", 9), ("memecoin", 8),
+        ("altcoin", 8), ("token", 5), ("ico", 8), ("airdrop", 7),
+        # People (7-9)
+        ("satoshi", 9), ("vitalik", 9), ("cz", 8), ("sbf", 8),
+        ("gensler", 7), ("sec crypto", 9),
     ],
     "GLOBAL": [
-        "global", "world", "international", "un", "united nations",
-        "imf", "world bank", "g7", "g20", "nato", "who",
+        # Definitive indicators (9-10)
+        ("global", 8), ("worldwide", 9), ("international", 7),
+        ("united nations", 10), ("un security council", 10),
+        # Organizations (8-10)
+        ("imf", 9), ("international monetary fund", 10),
+        ("world bank", 10), ("wto", 9), ("world trade organization", 10),
+        ("who", 8), ("world health organization", 10),
+        ("nato", 9), ("g7", 9), ("g20", 9), ("g8", 9),
+        ("brics", 9), ("oecd", 9), ("opec", 8),
+        ("world economic forum", 10), ("davos", 9),
+        ("paris agreement", 9), ("climate accord", 8),
+        # Concepts (6-8)
+        ("geopolitical", 8), ("world war", 10), ("global economy", 9),
+        ("pandemic", 7), ("climate change", 7),
     ],
+}
+
+# Simple list for backward compatibility (flattened from weighted)
+GEOGRAPHY_KEYWORDS = {
+    region: [kw for kw, _ in keywords]
+    for region, keywords in GEOGRAPHY_KEYWORDS_WEIGHTED.items()
 }
 
 
@@ -116,12 +293,20 @@ class MarketFilter:
             self.add_filter(filter_by_keywords, keywords=config.exclude_keywords, include=False)
         
         # Volume filter
-        if config.min_volume > 0:
-            self.add_filter(filter_by_volume, min_volume=config.min_volume)
-        
+        if config.min_volume > 0 or config.max_volume is not None:
+            self.add_filter(
+                filter_by_volume,
+                min_volume=config.min_volume,
+                max_volume=getattr(config, 'max_volume', None),
+            )
+
         # Liquidity filter
-        if config.min_liquidity > 0:
-            self.add_filter(filter_by_liquidity, min_liquidity=config.min_liquidity)
+        if config.min_liquidity > 0 or getattr(config, 'max_liquidity', None) is not None:
+            self.add_filter(
+                filter_by_liquidity,
+                min_liquidity=config.min_liquidity,
+                max_liquidity=getattr(config, 'max_liquidity', None),
+            )
         
         # Expiry filter
         if config.max_days_to_expiry:
@@ -129,7 +314,11 @@ class MarketFilter:
         
         # Geography filter
         if config.geographic_regions:
-            self.add_filter(filter_by_geography, regions=config.geographic_regions)
+            self.add_filter(
+                filter_by_geography,
+                regions=config.geographic_regions,
+                min_score=getattr(config, 'geo_min_score', 30.0),
+            )
         
         # Outcome count filter
         if config.min_outcomes or config.max_outcomes:
@@ -137,6 +326,22 @@ class MarketFilter:
                 filter_by_outcome_count,
                 min_outcomes=config.min_outcomes,
                 max_outcomes=config.max_outcomes,
+            )
+
+        # Reasoning filter (more expensive, run later)
+        if getattr(config, 'reasoning_heavy_only', False):
+            self.add_filter(
+                filter_by_reasoning,
+                min_reasoning_score=getattr(config, 'min_reasoning_score', 30.0),
+                llm_edge_levels=getattr(config, 'llm_edge_levels', ["high", "medium"]),
+            )
+
+        # Demographic bias filter (based on user demographics research)
+        if getattr(config, 'bias_filter_enabled', False):
+            self.add_filter(
+                filter_by_demographic_bias,
+                min_blind_spot_score=getattr(config, 'min_blind_spot_score', 20.0),
+                mispricing_levels=getattr(config, 'mispricing_levels', ["high", "medium"]),
             )
     
     def add_filter(self, filter_func: Callable, **kwargs):
@@ -384,61 +589,214 @@ def filter_by_expiry(
     return filtered
 
 
+def calculate_region_score(
+    text: str,
+    region: str,
+) -> tuple[float, list[str]]:
+    """
+    Calculate a confidence score for how strongly text relates to a region.
+
+    Args:
+        text: Text to analyze (lowercase)
+        region: Region code (US, EU, UK, ASIA, etc.)
+
+    Returns:
+        Tuple of (score, matched_keywords) where score is 0-100
+    """
+    region_upper = region.upper()
+    if region_upper not in GEOGRAPHY_KEYWORDS_WEIGHTED:
+        return 0.0, []
+
+    keywords = GEOGRAPHY_KEYWORDS_WEIGHTED[region_upper]
+    matched = []
+    total_weight = 0
+    max_weight = 0
+
+    # Keywords that need strict word boundaries to avoid false positives
+    # (e.g., "india" shouldn't match "indiana")
+    STRICT_BOUNDARY_KEYWORDS = {
+        "india", "indian", "china", "chinese", "asia", "asian",
+        "korea", "korean", "japan", "japanese", "uk", "eu",
+        "us", "usa", "fed", "the fed", "paris", "rome", "madrid",
+        "turkey", "turkish", "jordan", "cuba", "cuban", "chile",
+        "guinea", "niger", "mali", "chad", "togo", "congo",
+        "georgia", "colombia", "panama", "peru", "argentina",
+        "sol", "ada", "eth", "btc", "token",
+    }
+
+    for keyword, weight in keywords:
+        keyword_lower = keyword.lower()
+
+        # Determine if we need strict word boundaries
+        needs_boundary = (
+            len(keyword) <= 4 or  # Short keywords always need boundaries
+            keyword_lower in STRICT_BOUNDARY_KEYWORDS or
+            any(keyword_lower.startswith(s) or keyword_lower.endswith(s)
+                for s in ["ian", "ese", "ish"])  # Demonyms
+        )
+
+        if needs_boundary:
+            # Strict word boundary matching
+            pattern = r'\b' + re.escape(keyword) + r'\b'
+        else:
+            # Allow substring matches for longer, specific terms
+            pattern = re.escape(keyword)
+
+        if re.search(pattern, text, re.IGNORECASE):
+            matched.append(keyword)
+            total_weight += weight
+            max_weight = max(max_weight, weight)
+
+    if not matched:
+        return 0.0, []
+
+    # Score calculation:
+    # - Base: highest weight keyword found (0-10 scaled to 0-50)
+    # - Bonus: additional keywords add confidence (up to +50)
+    # - Multiple strong matches boost score significantly
+    base_score = (max_weight / 10) * 50
+
+    # Bonus for multiple matches (diminishing returns)
+    match_bonus = min(50, len(matched) * 10 + (total_weight - max_weight) * 2)
+
+    final_score = min(100, base_score + match_bonus)
+
+    return final_score, matched
+
+
 def filter_by_geography(
     markets: list[Market],
     regions: list[str],
+    min_score: float = 30.0,
+    return_scores: bool = False,
 ) -> list[Market]:
     """
-    Filter markets by inferred geographic relevance.
-    
-    Geographic relevance is inferred from keywords in the market
-    title, description, and tags.
-    
+    Filter markets by inferred geographic relevance using weighted keyword matching.
+
+    Geographic relevance is inferred from keywords in the market title,
+    description, tags, and event title. Each keyword has a weight indicating
+    how strongly it suggests regional relevance.
+
     Args:
         markets: Markets to filter
-        regions: List of region codes (US, EU, UK, ASIA, CRYPTO, GLOBAL)
-        
+        regions: List of region codes:
+            - US: United States
+            - EU: European Union
+            - UK: United Kingdom
+            - ASIA: Asia-Pacific (China, Japan, Korea, India, SE Asia)
+            - LATAM: Latin America
+            - MIDDLE_EAST: Middle East
+            - AFRICA: Africa
+            - CRYPTO: Cryptocurrency/blockchain
+            - GLOBAL: Global/international topics
+        min_score: Minimum confidence score (0-100) to include market.
+            - 30 (default): Include if any moderate keyword matches
+            - 50: Require strong indicator or multiple matches
+            - 70: Require definitive indicator
+        return_scores: If True, adds '_geo_score' and '_geo_matches' to market.raw_data
+
     Returns:
         Markets with inferred geographic relevance to specified regions
-        
+
     Example:
         >>> us_markets = filter_by_geography(markets, ["US"])
-        >>> crypto_markets = filter_by_geography(markets, ["CRYPTO"])
+        >>> crypto_markets = filter_by_geography(markets, ["CRYPTO"], min_score=50)
+        >>> # Multiple regions (OR logic)
+        >>> western_markets = filter_by_geography(markets, ["US", "EU", "UK"])
     """
     if not regions:
         return markets
-    
-    # Build combined keyword list for requested regions
-    region_keywords = []
+
+    # Validate regions
+    valid_regions = []
     for region in regions:
         region_upper = region.upper()
-        if region_upper in GEOGRAPHY_KEYWORDS:
-            region_keywords.extend(GEOGRAPHY_KEYWORDS[region_upper])
-    
-    if not region_keywords:
-        logger.warning(f"No keywords found for regions: {regions}")
+        if region_upper in GEOGRAPHY_KEYWORDS_WEIGHTED:
+            valid_regions.append(region_upper)
+        else:
+            logger.warning(f"Unknown region '{region}'. Valid: {list(GEOGRAPHY_KEYWORDS_WEIGHTED.keys())}")
+
+    if not valid_regions:
+        logger.warning(f"No valid regions found in: {regions}")
         return markets
-    
-    # Build regex pattern
-    pattern = re.compile(
-        "|".join(re.escape(kw) for kw in region_keywords),
-        re.IGNORECASE
-    )
-    
+
     filtered = []
-    
+
     for market in markets:
-        search_text = (
-            market.question + " " +
-            market.description + " " +
-            " ".join(market.tags) + " " +
-            (market.event_title or "")
-        )
-        
-        if pattern.search(search_text):
+        # Build comprehensive text to search
+        search_text = " ".join([
+            market.question,
+            market.description or "",
+            " ".join(market.tags),
+            market.event_title or "",
+            market.category or "",
+        ]).lower()
+
+        # Calculate score for each requested region, take the best match
+        best_score = 0.0
+        best_region = None
+        all_matches = []
+
+        for region in valid_regions:
+            score, matches = calculate_region_score(search_text, region)
+            if score > best_score:
+                best_score = score
+                best_region = region
+                all_matches = matches
+
+        if best_score >= min_score:
+            # Optionally store score info for debugging/analysis
+            if return_scores and market.raw_data is not None:
+                market.raw_data['_geo_score'] = best_score
+                market.raw_data['_geo_region'] = best_region
+                market.raw_data['_geo_matches'] = all_matches
+
             filtered.append(market)
-    
+            logger.debug(
+                f"Market '{market.question[:50]}...' matched {best_region} "
+                f"with score {best_score:.1f} ({len(all_matches)} keywords)"
+            )
+
+    logger.info(f"Geographic filter: {len(markets)} -> {len(filtered)} markets for regions {valid_regions}")
+
     return filtered
+
+
+def get_market_regions(
+    market: Market,
+    min_score: float = 30.0,
+) -> dict[str, float]:
+    """
+    Analyze which regions a market relates to.
+
+    Useful for understanding market geographic relevance without filtering.
+
+    Args:
+        market: Market to analyze
+        min_score: Minimum score to include a region
+
+    Returns:
+        Dict mapping region codes to confidence scores
+
+    Example:
+        >>> regions = get_market_regions(market)
+        >>> print(regions)  # {'US': 85.0, 'GLOBAL': 45.0}
+    """
+    search_text = " ".join([
+        market.question,
+        market.description or "",
+        " ".join(market.tags),
+        market.event_title or "",
+    ]).lower()
+
+    results = {}
+    for region in GEOGRAPHY_KEYWORDS_WEIGHTED.keys():
+        score, _ = calculate_region_score(search_text, region)
+        if score >= min_score:
+            results[region] = score
+
+    # Sort by score descending
+    return dict(sorted(results.items(), key=lambda x: x[1], reverse=True))
 
 
 def filter_by_outcome_count(
@@ -516,17 +874,162 @@ def filter_by_price_range(
     return filtered
 
 
+def filter_by_reasoning(
+    markets: list[Market],
+    min_reasoning_score: float = 30.0,
+    llm_edge_levels: Optional[list[str]] = None,
+) -> list[Market]:
+    """
+    Filter markets to those that are reasoning-heavy (where LLM may have edge).
+
+    Reasoning-heavy markets favor analytical thinking over information access:
+    - Complex conditional probabilities
+    - Multi-factor analysis required
+    - Long time horizons
+    - Abstract or conceptual questions
+
+    Information-heavy markets (filtered out) favor real-time information:
+    - Near-term events
+    - Sports outcomes
+    - Breaking news dependent
+    - Insider knowledge dependent
+
+    Args:
+        markets: Markets to filter
+        min_reasoning_score: Minimum reasoning score (0-100)
+        llm_edge_levels: Filter by LLM edge likelihood ["high", "medium", "low", "unlikely"]
+            Default: ["high", "medium"]
+
+    Returns:
+        Markets where LLM analysis may provide an edge
+
+    Example:
+        >>> # Find markets where LLM reasoning is valuable
+        >>> filtered = filter_by_reasoning(markets, min_reasoning_score=40)
+    """
+    from polymarket_agent.analysis.reasoning_classifier import (
+        analyze_market_reasoning,
+    )
+
+    if llm_edge_levels is None:
+        llm_edge_levels = ["high", "medium"]
+
+    filtered = []
+
+    for market in markets:
+        analysis = analyze_market_reasoning(market)
+
+        # Apply filters
+        if analysis.reasoning_score < min_reasoning_score:
+            continue
+        if analysis.llm_edge_likelihood not in llm_edge_levels:
+            continue
+
+        # Store analysis in raw_data for later use
+        if market.raw_data is not None:
+            market.raw_data['_reasoning_score'] = analysis.reasoning_score
+            market.raw_data['_information_score'] = analysis.information_score
+            market.raw_data['_llm_edge'] = analysis.llm_edge_likelihood
+            market.raw_data['_reasoning_factors'] = analysis.reasoning_factors
+
+        filtered.append(market)
+        logger.debug(
+            f"Market '{market.question[:50]}...' passed reasoning filter "
+            f"(R:{analysis.reasoning_score:.0f} I:{analysis.information_score:.0f} edge:{analysis.llm_edge_likelihood})"
+        )
+
+    logger.info(
+        f"Reasoning filter: {len(markets)} -> {len(filtered)} markets "
+        f"(min_score={min_reasoning_score}, edge_levels={llm_edge_levels})"
+    )
+
+    return filtered
+
+
+def filter_by_demographic_bias(
+    markets: list[Market],
+    min_blind_spot_score: float = 20.0,
+    mispricing_levels: Optional[list[str]] = None,
+) -> list[Market]:
+    """
+    Filter markets by demographic bias potential (where user biases may cause mispricing).
+
+    Based on research of Polymarket user demographics:
+    - Gender: ~73% male, ~27% female
+    - Age: Concentrated 25-45
+    - Geography: US (~31%), then Germany, Canada, Vietnam, UK
+    - Political: Right-leaning bias on political markets
+    - Crypto: High overlap with crypto enthusiasts
+
+    Blind spots (more likely to be mispriced):
+    - Non-US politics and regions
+    - Topics unfamiliar to the demographic
+    - Left-leaning political outcomes (may be underpriced)
+    - Crypto-skeptical outcomes (may be underpriced)
+
+    Args:
+        markets: Markets to filter
+        min_blind_spot_score: Minimum blind spot score (0-100)
+        mispricing_levels: Filter by mispricing likelihood ["high", "medium", "low"]
+            Default: ["high", "medium"]
+
+    Returns:
+        Markets with higher demographic bias potential
+
+    Example:
+        >>> # Find markets where user biases may cause mispricing
+        >>> filtered = filter_by_demographic_bias(markets, min_blind_spot_score=30)
+    """
+    from polymarket_agent.analysis.demographic_bias import (
+        analyze_demographic_bias,
+    )
+
+    if mispricing_levels is None:
+        mispricing_levels = ["high", "medium"]
+
+    filtered = []
+
+    for market in markets:
+        analysis = analyze_demographic_bias(market)
+
+        # Apply filters
+        if analysis.blind_spot_score < min_blind_spot_score:
+            continue
+        if analysis.mispricing_likelihood not in mispricing_levels:
+            continue
+
+        # Store analysis in raw_data for later use
+        if market.raw_data is not None:
+            market.raw_data['_blind_spot_score'] = analysis.blind_spot_score
+            market.raw_data['_bias_direction'] = analysis.likely_bias_direction
+            market.raw_data['_detected_biases'] = analysis.detected_biases
+            market.raw_data['_mispricing_likelihood'] = analysis.mispricing_likelihood
+
+        filtered.append(market)
+        logger.debug(
+            f"Market '{market.question[:50]}...' passed bias filter "
+            f"(blind_spot:{analysis.blind_spot_score:.0f} direction:{analysis.likely_bias_direction})"
+        )
+
+    logger.info(
+        f"Demographic bias filter: {len(markets)} -> {len(filtered)} markets "
+        f"(min_blind_spot={min_blind_spot_score}, levels={mispricing_levels})"
+    )
+
+    return filtered
+
+
 def apply_filters(
     markets: list[Market],
     config: FilterConfig,
 ) -> FilterResult:
     """
     Convenience function to apply filters from a FilterConfig.
-    
+
     Args:
         markets: Markets to filter
         config: Filter configuration
-        
+
     Returns:
         FilterResult with filtered markets and metadata
     """

@@ -76,7 +76,7 @@ The following information was gathered from web search to help inform your analy
 
 **Key Facts Extracted:**
 {key_facts}
-
+{demographic_bias_context}
 ---
 
 ## YOUR TASK
@@ -219,6 +219,30 @@ def build_assessment_prompt(
     else:
         days_to_expiry_str = str(days_to_expiry)
     
+    # Build demographic bias context from raw_data (populated by bias filter)
+    demographic_bias_context = ""
+    if market.raw_data and '_detected_biases' in market.raw_data:
+        biases = market.raw_data['_detected_biases']
+        direction = market.raw_data.get('_bias_direction', 'uncertain')
+        blind_spot = market.raw_data.get('_blind_spot_score', 0)
+        bias_list = "\n".join(f"- {b}" for b in biases)
+        demographic_bias_context = (
+            "\n## DEMOGRAPHIC BIAS CONTEXT\n"
+            "\n"
+            "Polymarket's user base is approximately 73% male, concentrated ages 25-45, ~31% US-based,\n"
+            "with strong crypto/tech affinity and a documented right-leaning political skew.\n"
+            "\n"
+            "This market was flagged for the following potential demographic biases:\n"
+            f"{bias_list}\n"
+            "\n"
+            f"Likely bias direction: {direction}\n"
+            f"Blind spot score: {blind_spot}/100\n"
+            "\n"
+            "Consider whether this demographic skew may have distorted the current market price.\n"
+            "A high blind spot score means the topic is less familiar to the typical Polymarket user,\n"
+            "increasing the chance of mispricing.\n"
+        )
+
     # Build the prompt
     prompt = ASSESSMENT_PROMPT_TEMPLATE.format(
         question=market.question,
@@ -230,6 +254,7 @@ def build_assessment_prompt(
         days_to_expiry=days_to_expiry_str,
         external_context=external_context,
         key_facts=key_facts,
+        demographic_bias_context=demographic_bias_context,
     )
     
     return prompt

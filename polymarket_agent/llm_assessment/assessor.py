@@ -277,7 +277,7 @@ class MarketAssessor:
 async def assess_market(
     market: Market,
     enrichment: Optional[EnrichedMarket] = None,
-    model: str = "claude-sonnet-4-5-20250514",
+    model: str = "claude-sonnet-4-5",
 ) -> LLMAssessment:
     """
     Convenience function to assess a single market.
@@ -301,7 +301,7 @@ async def assess_market(
 async def assess_markets_batch(
     markets: list[Market],
     enrichments: Optional[dict[str, EnrichedMarket]] = None,
-    model: str = "claude-sonnet-4-5-20250514",
+    model: str = "claude-sonnet-4-5",
     progress_callback: Optional[callable] = None,
 ) -> list[LLMAssessment]:
     """

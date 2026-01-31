@@ -282,6 +282,7 @@ async def fetch_active_events(
     order: str = "volume",
     ascending: bool = False,
     tag_ids: Optional[list[int]] = None,
+    query: Optional[str] = None,
 ) -> list[Event]:
     """
     Fetch active events from the Gamma API.
@@ -295,6 +296,7 @@ async def fetch_active_events(
         order: Field to order by (volume, createdAt, endDate)
         ascending: Sort ascending if True, descending if False
         tag_ids: Filter by specific tag IDs (only first tag used)
+        query: Optional search query to filter events by keyword
         
     Returns:
         List of Event objects
@@ -322,6 +324,10 @@ async def fetch_active_events(
             # Add tag_id filter if provided (API only supports one tag at a time)
             if tag_ids and len(tag_ids) > 0:
                 params["tag_id"] = str(tag_ids[0])
+            
+            # Add search query if provided
+            if query:
+                params["q"] = query
             
             logger.debug(f"Fetching events: offset={current_offset}, limit={page_size}")
             
@@ -366,6 +372,7 @@ async def fetch_active_markets(
     order: str = "volume",
     ascending: bool = False,
     tag: Optional[str] = None,
+    query: Optional[str] = None,
 ) -> list[Market]:
     """
     Fetch active markets directly from the Gamma API markets endpoint.
@@ -378,6 +385,7 @@ async def fetch_active_markets(
         order: Field to order by
         ascending: Sort direction
         tag: Optional tag filter
+        query: Optional search query
         
     Returns:
         List of Market objects
@@ -404,6 +412,9 @@ async def fetch_active_markets(
             
             if tag:
                 params["tag"] = tag
+            
+            if query:
+                params["q"] = query
             
             logger.debug(f"Fetching markets: offset={current_offset}")
             

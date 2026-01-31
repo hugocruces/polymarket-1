@@ -97,7 +97,7 @@ class AnthropicClient(LLMClient):
     Docs: https://docs.anthropic.com/
     """
     
-    def __init__(self, model: str = "claude-sonnet-4-5-20250514", api_key: Optional[str] = None):
+    def __init__(self, model: str = "claude-sonnet-4-5", api_key: Optional[str] = None):
         super().__init__(model, api_key)
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
         self._client = None
@@ -126,36 +126,45 @@ class AnthropicClient(LLMClient):
         max_tokens: int = 4096,
         temperature: float = 0.3,
     ) -> LLMResponse:
-        """Generate completion using Claude."""
+        """Generate completion using Claude with streaming."""
         client = self._get_client()
-        
+
         messages = [{"role": "user", "content": prompt}]
-        
+
         kwargs = {
             "model": self.model,
             "max_tokens": max_tokens,
             "temperature": temperature,
             "messages": messages,
         }
-        
+
         if system_prompt:
             kwargs["system"] = system_prompt
-        
+
         try:
-            response = await client.messages.create(**kwargs)
-            
+            # Use streaming to avoid timeout errors with the Anthropic SDK
             content = ""
-            for block in response.content:
-                if hasattr(block, "text"):
-                    content += block.text
-            
+            input_tokens = 0
+            output_tokens = 0
+            finish_reason = ""
+
+            async with client.messages.stream(**kwargs) as stream:
+                async for text in stream.text_stream:
+                    content += text
+
+                # Get final message for usage stats
+                response = await stream.get_final_message()
+                input_tokens = response.usage.input_tokens
+                output_tokens = response.usage.output_tokens
+                finish_reason = response.stop_reason or ""
+
             return LLMResponse(
                 content=content,
                 model=self.model,
                 provider=self.provider_name,
-                input_tokens=response.usage.input_tokens,
-                output_tokens=response.usage.output_tokens,
-                finish_reason=response.stop_reason or "",
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                finish_reason=finish_reason,
             )
         except Exception as e:
             logger.error(f"Anthropic API error: {e}")
@@ -242,7 +251,7 @@ class GoogleClient(LLMClient):
     Docs: https://ai.google.dev/docs
     """
     
-    def __init__(self, model: str = "gemini-2.0-flash", api_key: Optional[str] = None):
+    def __init__(self, model: str = "gemini-2.5-flash", api_key: Optional[str] = None):
         super().__init__(model, api_key)
         self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
         self._client = None
@@ -309,7 +318,7 @@ class GoogleClient(LLMClient):
 
 
 def get_llm_client(
-    model: str = "claude-sonnet-4-5-20250514",
+    model: str = "claude-sonnet-4-5",
     api_key: Optional[str] = None,
 ) -> LLMClient:
     """
@@ -318,7 +327,7 @@ def get_llm_client(
     Automatically selects the correct provider based on the model name.
     
     Args:
-        model: Model identifier (e.g., "claude-sonnet-4-5-20250514", "gpt-5.2", "gemini-2.0-flash")
+        model: Model identifier (e.g., "claude-sonnet-4-5", "gpt-5.2", "gemini-2.5-flash")
         api_key: Optional API key (uses environment variable if not provided)
         
     Returns:
@@ -328,7 +337,7 @@ def get_llm_client(
         ValueError: If model is not recognized
         
     Example:
-        >>> client = get_llm_client("claude-sonnet-4-5-20250514")
+        >>> client = get_llm_client("claude-sonnet-4-5")
         >>> response = await client.complete("Hello, world!")
     """
     if model not in LLM_MODELS:
