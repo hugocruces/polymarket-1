@@ -228,7 +228,11 @@ def _parse_market(data: dict, event_data: Optional[dict] = None) -> Market:
         active=data.get("active", True),
         closed=data.get("closed", False),
         resolved=data.get("resolved", False),
-        event_id=str(data.get("eventId", "")) if data.get("eventId") else None,
+        event_id=(
+            str(data.get("eventId", "")) if data.get("eventId")
+            else str(event_data["id"]) if event_data and event_data.get("id")
+            else None
+        ),
         event_title=event_data.get("title") if event_data else None,
         condition_id=data.get("conditionId"),
         raw_data=data,

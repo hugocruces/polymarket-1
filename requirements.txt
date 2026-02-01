@@ -15,7 +15,7 @@ PyYAML>=6.0.1
 # LLM Providers (install the ones you need)
 anthropic>=0.40.0      # For Claude models
 openai>=1.50.0         # For GPT models
-google-generativeai>=0.8.0  # For Gemini models
+google-genai>=1.0.0        # For Gemini models
 
 # Data handling
 dataclasses-json>=0.6.0

@@ -198,6 +198,8 @@ class FilterConfig:
     bias_filter_enabled: bool = False  # Filter for markets with demographic bias potential
     min_blind_spot_score: float = 10.0  # Minimum blind spot score (0-100), lower = more inclusive
     mispricing_levels: list[str] = field(default_factory=lambda: ["high", "medium"])  # Filter by mispricing likelihood
+    # Multi-market event filter
+    max_markets_per_event: Optional[int] = None  # Exclude events with more markets than this (e.g., 5)
 
 
 @dataclass
@@ -227,6 +229,16 @@ class AgentConfig:
     output_format: str = "both"  # "json", "csv", "markdown", or "both"
     verbose: bool = False
     dry_run: bool = False
+    # Database (Feature C)
+    enable_database: bool = True
+    db_path: str = "data/polymarket_analysis.db"
+    # Spread analysis (Feature F)
+    enable_spread_analysis: bool = False
+    # LLM bias analysis (Feature E)
+    llm_bias_analysis: bool = False
+    llm_bias_model: str = "claude-haiku-4-5"
+    # Multi-model consensus (Feature B)
+    consensus_models: list[str] = field(default_factory=list)
     
     def __post_init__(self):
         """Validate configuration after initialization."""
@@ -235,9 +247,21 @@ class AgentConfig:
             raise ValueError(
                 f"Unknown LLM model: {self.llm_model}. Available: {available}"
             )
-        
+
         if isinstance(self.risk_tolerance, str):
             self.risk_tolerance = RiskTolerance(self.risk_tolerance)
+
+        # Validate consensus models
+        for model in self.consensus_models:
+            if model not in LLM_MODELS:
+                available = ", ".join(LLM_MODELS.keys())
+                raise ValueError(
+                    f"Unknown consensus model: {model}. Available: {available}"
+                )
+
+        # LLM bias analysis requires the keyword-based bias filter to run first
+        if self.llm_bias_analysis and not self.filters.bias_filter_enabled:
+            self.filters.bias_filter_enabled = True
     
     @property
     def llm_config(self) -> dict:
@@ -276,7 +300,13 @@ class AgentConfig:
             llm_config = data.pop("llm")
             if "model" in llm_config:
                 data["llm_model"] = llm_config["model"]
-        
+
+        # Handle boolean coercion for YAML 'true'/'false' strings
+        for bool_key in ("enable_database", "enable_spread_analysis",
+                         "llm_bias_analysis"):
+            if bool_key in data and isinstance(data[bool_key], str):
+                data[bool_key] = data[bool_key].lower() in ("true", "1", "yes")
+
         return cls(filters=filters, **data)
 
 

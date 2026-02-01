@@ -17,6 +17,7 @@ Sources:
 - Polymarket trading pattern analysis
 """
 
+import asyncio
 import re
 import logging
 from dataclasses import dataclass, field
@@ -412,6 +413,89 @@ def get_bias_summary(markets: list[Market]) -> dict:
         "high_potential_count": mispricing_counts["high"],
         "high_potential_pct": mispricing_counts["high"] / len(markets) * 100 if markets else 0,
     }
+
+
+async def analyze_bias_with_llm(
+    market: Market,
+    keyword_analysis: dict,
+    llm_client,
+    model: str = "claude-haiku-4-5",
+) -> Optional[dict]:
+    """
+    Use a cheap LLM call to refine keyword-detected bias direction.
+
+    Fixes the keyword-matching limitation where e.g. "Will Bitcoin fall below $30K?"
+    gets tagged as crypto-optimistic when it's actually a bearish question.
+
+    Only called for markets that already passed keyword pre-filter.
+
+    Args:
+        market: Market being analyzed
+        keyword_analysis: Dict with '_detected_biases', '_bias_direction', etc.
+        llm_client: LLMClient instance (should be cheap model)
+        model: Model name for logging
+
+    Returns:
+        Updated dict with corrected bias fields, or None on failure
+    """
+    detected_biases = keyword_analysis.get('_detected_biases', [])
+    if not detected_biases:
+        return None
+
+    bias_list = ", ".join(detected_biases)
+    current_direction = keyword_analysis.get('_bias_direction', 'uncertain')
+
+    prompt = f"""Analyze the bias direction for this prediction market question given the detected demographic biases.
+
+Question: {market.question}
+Description: {(market.description or '')[:500]}
+Current market prices: {market.outcome_prices}
+
+Detected biases (from keyword matching): {bias_list}
+Current assumed direction: {current_direction}
+
+Given the SPECIFIC FRAMING of this question, is the keyword-detected bias direction correct?
+
+For example:
+- "Will Bitcoin reach $100K?" with crypto_optimism bias -> overestimate (users bullish)
+- "Will Bitcoin fall below $30K?" with crypto_optimism bias -> underestimate (users won't believe it'll drop)
+- "Will Trump win?" with political_right_bias -> overestimate (users overestimate Trump)
+- "Will Trump lose?" with political_right_bias -> underestimate (users won't believe he'll lose)
+
+Respond with ONLY a JSON object:
+{{
+    "corrected_direction": "overestimate|underestimate|uncertain|neutral",
+    "confidence": 0.0-1.0,
+    "reasoning": "brief explanation"
+}}"""
+
+    try:
+        response = await llm_client.complete(
+            prompt=prompt,
+            max_tokens=300,
+            temperature=0.1,
+        )
+
+        import json
+        from polymarket_agent.llm_assessment.prompts import extract_json_from_response
+
+        json_str = extract_json_from_response(response.content)
+        data = json.loads(json_str)
+
+        corrected_direction = data.get("corrected_direction", current_direction)
+        if corrected_direction not in ("overestimate", "underestimate", "uncertain", "neutral"):
+            corrected_direction = current_direction
+
+        return {
+            "_bias_direction": corrected_direction,
+            "_bias_llm_refined": True,
+            "_bias_llm_confidence": data.get("confidence", 0.5),
+            "_bias_llm_reasoning": data.get("reasoning", ""),
+        }
+
+    except Exception as e:
+        logger.debug(f"LLM bias analysis failed for {market.id}: {e}")
+        return None
 
 
 # Convenience function to get demographic profile

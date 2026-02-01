@@ -21,6 +21,10 @@ from polymarket_agent.llm_assessment.prompts import (
     ASSESSMENT_PROMPT_TEMPLATE,
     build_assessment_prompt,
 )
+from polymarket_agent.llm_assessment.consensus import (
+    ConsensusAssessment,
+    aggregate_assessments,
+)
 
 __all__ = [
     "LLMClient",
@@ -34,4 +38,6 @@ __all__ = [
     "SYSTEM_PROMPT",
     "ASSESSMENT_PROMPT_TEMPLATE",
     "build_assessment_prompt",
+    "ConsensusAssessment",
+    "aggregate_assessments",
 ]

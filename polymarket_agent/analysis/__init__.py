@@ -11,10 +11,19 @@ from polymarket_agent.analysis.demographic_bias import (
     BiasAnalysis,
     DemographicProfile,
     analyze_demographic_bias,
+    analyze_bias_with_llm,
     filter_by_bias_potential,
     get_bias_summary,
     get_demographic_profile,
     DEMOGRAPHIC_BIASES,
+)
+
+from polymarket_agent.analysis.spread_analysis import (
+    SlippageEstimate,
+    SpreadAnalysis,
+    calculate_slippage,
+    analyze_spread,
+    analyze_spreads_batch,
 )
 
 __all__ = [
@@ -27,8 +36,15 @@ __all__ = [
     "BiasAnalysis",
     "DemographicProfile",
     "analyze_demographic_bias",
+    "analyze_bias_with_llm",
     "filter_by_bias_potential",
     "get_bias_summary",
     "get_demographic_profile",
     "DEMOGRAPHIC_BIASES",
+    # Spread analysis
+    "SlippageEstimate",
+    "SpreadAnalysis",
+    "calculate_slippage",
+    "analyze_spread",
+    "analyze_spreads_batch",
 ]

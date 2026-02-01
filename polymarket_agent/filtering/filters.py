@@ -291,7 +291,14 @@ class MarketFilter:
         
         if config.exclude_keywords:
             self.add_filter(filter_by_keywords, keywords=config.exclude_keywords, include=False)
-        
+
+        # Multi-market event filter (drop events with too many sub-markets)
+        if config.max_markets_per_event is not None:
+            self.add_filter(
+                filter_by_event_market_count,
+                max_markets_per_event=config.max_markets_per_event,
+            )
+
         # Volume filter
         if config.min_volume > 0 or config.max_volume is not None:
             self.add_filter(
@@ -1016,6 +1023,50 @@ def filter_by_demographic_bias(
         f"(min_blind_spot={min_blind_spot_score}, levels={mispricing_levels})"
     )
 
+    return filtered
+
+
+def filter_by_event_market_count(
+    markets: list[Market],
+    max_markets_per_event: int = 5,
+) -> list[Market]:
+    """
+    Exclude markets belonging to events that have too many sub-markets.
+
+    Events like "Who will be PM of Japan?" spawn one market per candidate,
+    producing many low-probability, hard-to-assess markets that waste LLM calls.
+
+    Args:
+        markets: Markets to filter
+        max_markets_per_event: Events with more markets than this are excluded entirely.
+            Markets without an event_id are always kept.
+
+    Returns:
+        Markets whose parent event has at most max_markets_per_event sub-markets
+    """
+    from collections import Counter
+
+    # Count how many markets each event_id has in the current list
+    event_counts: Counter = Counter()
+    for m in markets:
+        if m.event_id:
+            event_counts[m.event_id] += 1
+
+    # Build set of oversized events
+    oversized = {eid for eid, count in event_counts.items() if count > max_markets_per_event}
+
+    if oversized:
+        logger.info(
+            f"Event market-count filter: excluding {len(oversized)} events "
+            f"with >{max_markets_per_event} markets each"
+        )
+
+    filtered = [m for m in markets if m.event_id not in oversized]
+
+    logger.info(
+        f"Event market-count filter: {len(markets)} -> {len(filtered)} markets "
+        f"(max_per_event={max_markets_per_event})"
+    )
     return filtered
 
 

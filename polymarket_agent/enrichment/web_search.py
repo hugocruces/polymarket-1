@@ -447,6 +447,115 @@ def extract_key_facts(results: list[SearchResult]) -> list[str]:
     return facts[:10]  # Limit to top 10 facts
 
 
+POLITICAL_KEYWORDS = [
+    "election", "vote", "president", "governor", "senator", "congress",
+    "parliament", "prime minister", "poll", "ballot", "nominee", "candidate",
+    "republican", "democrat", "gop", "labour", "conservative", "liberal",
+    "trump", "biden", "harris", "desantis", "newsom", "haley",
+    "macron", "starmer", "trudeau", "modi", "scholz",
+    "approval rating", "primary", "caucus", "swing state",
+]
+
+
+def is_political_market(market: Market) -> bool:
+    """Check if a market is political based on question, tags, and category."""
+    text = f"{market.question} {market.category} {' '.join(market.tags)}".lower()
+    return any(kw in text for kw in POLITICAL_KEYWORDS)
+
+
+def build_polling_query(market: Market) -> str:
+    """Build a polling-focused search query from a market question."""
+    query = market.question
+    # Strip question words
+    query = re.sub(
+        r'^(will|would|does|do|is|are|can|could|who)\s+',
+        '', query, flags=re.IGNORECASE
+    )
+    # Remove question marks
+    query = query.rstrip('?')
+    query += " polls latest polling average"
+
+    if len(query) > 200:
+        query = query[:200]
+    return query.strip()
+
+
+def extract_poll_numbers(snippets: list[str]) -> list[dict]:
+    """
+    Extract poll numbers from search result snippets.
+
+    Looks for patterns like "NAME NN%" in text.
+
+    Returns:
+        List of dicts: {"entity": str, "percentage": float, "source": str, "snippet": str}
+    """
+    results = []
+    # Pattern: one or more capitalized words followed by a number and %
+    pattern = re.compile(
+        r'([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)\s+'
+        r'(?:at\s+|with\s+|leads?\s+(?:with\s+)?|has\s+|polls?\s+(?:at\s+)?)?'
+        r'(\d{1,2}(?:\.\d)?)\s*%',
+        re.IGNORECASE
+    )
+
+    for snippet in snippets:
+        matches = pattern.findall(snippet)
+        for name, pct in matches:
+            name = name.strip()
+            # Filter out non-name matches
+            if len(name) < 2 or name.lower() in ('the', 'a', 'an', 'about', 'around'):
+                continue
+            try:
+                percentage = float(pct)
+                if 0 < percentage <= 100:
+                    results.append({
+                        "entity": name,
+                        "percentage": percentage,
+                        "source": snippet[:100],
+                        "snippet": snippet,
+                    })
+            except ValueError:
+                continue
+
+    # Deduplicate by entity, keep highest percentage
+    seen = {}
+    for r in results:
+        entity = r["entity"].lower()
+        if entity not in seen or r["percentage"] > seen[entity]["percentage"]:
+            seen[entity] = r
+
+    return list(seen.values())
+
+
+def format_polling_context(polling_data: list[dict]) -> str:
+    """Format polling data for inclusion in prompts."""
+    if not polling_data:
+        return ""
+
+    lines = ["Recent polling data:"]
+    for poll in polling_data:
+        lines.append(f"- {poll['entity']}: {poll['percentage']}%")
+
+    return "\n".join(lines)
+
+
+async def search_for_polling(
+    market: Market,
+    provider: Optional[WebSearchProvider] = None,
+) -> list[dict]:
+    """Search for polling data for a political market."""
+    if provider is None:
+        provider = get_search_provider()
+
+    query = build_polling_query(market)
+    results = await provider.search(query, num_results=5)
+
+    snippets = [r.snippet for r in results]
+    polling_data = extract_poll_numbers(snippets)
+
+    return polling_data
+
+
 async def enrich_market(
     market: Market,
     provider: Optional[WebSearchProvider] = None,
@@ -483,6 +592,23 @@ async def enrich_market(
             except:
                 pass
     
+    # For political markets, also search for polling data
+    if is_political_market(market):
+        try:
+            polling_data = await search_for_polling(market, provider)
+            if polling_data:
+                # Store in market raw_data for prompt inclusion
+                if market.raw_data is None:
+                    market.raw_data = {}
+                market.raw_data['_polling_data'] = polling_data
+
+                # Append polling context to external context
+                polling_context = format_polling_context(polling_data)
+                if polling_context:
+                    context += f"\n\n{polling_context}"
+        except Exception as e:
+            logger.debug(f"Polling search failed for {market.id}: {e}")
+
     return EnrichedMarket(
         market=market,
         external_context=context,

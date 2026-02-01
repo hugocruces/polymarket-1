@@ -251,6 +251,7 @@ def score_market(
     assessment: LLMAssessment,
     enrichment: Optional[EnrichedMarket] = None,
     config: Optional[AgentConfig] = None,
+    spread_analysis: Optional[dict] = None,
 ) -> ScoredMarket:
     """
     Calculate full scores for a market.
@@ -298,7 +299,17 @@ def score_market(
         # Aggressive: boost borderline opportunities
         if mispricing > 40:
             total = min(100, total * 1.1)
-    
+
+    # Apply spread analysis penalty if available
+    if spread_analysis:
+        net_edge = spread_analysis.get("net_edge", 0)
+        if net_edge <= 0:
+            # Negative net edge: heavily penalize
+            total *= 0.3
+        elif net_edge < 0.03:
+            # Thin net edge: moderate penalty
+            total *= 0.7
+
     return ScoredMarket(
         market=market,
         enrichment=enrichment,
@@ -310,6 +321,7 @@ def score_market(
         risk_score=risk_adj,
         total_score=total,
         rank=0,  # Set during ranking
+        spread_analysis=spread_analysis,
     )
 
 

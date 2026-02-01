@@ -107,7 +107,13 @@ Analyze this market and provide your assessment in the following JSON format:
     "warnings": [
         "<any warnings about this assessment>",
         ...
-    ]
+    ],
+    "bias_adjustment": {{
+        "detected_biases": ["<bias category 1>", ...],
+        "estimated_skew_direction": "<overpriced|underpriced|neutral>",
+        "estimated_skew_magnitude": 0.0,
+        "reasoning": "<explanation of bias correction applied>"
+    }}
 }}
 ```
 
@@ -186,6 +192,7 @@ def format_key_facts(facts: list[str]) -> str:
 def build_assessment_prompt(
     market,  # Market object
     enrichment = None,  # EnrichedMarket object
+    bias_analysis = None,  # Optional BiasAnalysis object
 ) -> str:
     """
     Build the full assessment prompt for a market.
@@ -221,27 +228,119 @@ def build_assessment_prompt(
     
     # Build demographic bias context from raw_data (populated by bias filter)
     demographic_bias_context = ""
-    if market.raw_data and '_detected_biases' in market.raw_data:
+
+    # Always include demographics awareness section
+    bias_correction_section = (
+        "\n## BIAS CORRECTION TASK\n"
+        "\n"
+        "Polymarket's user base is approximately 73% male, concentrated ages 25-45, ~31% US-based,\n"
+        "with strong crypto/tech affinity and a documented right-leaning political skew.\n"
+        "\n"
+    )
+
+    has_specific_biases = market.raw_data and '_detected_biases' in market.raw_data
+
+    if has_specific_biases:
         biases = market.raw_data['_detected_biases']
         direction = market.raw_data.get('_bias_direction', 'uncertain')
         blind_spot = market.raw_data.get('_blind_spot_score', 0)
         bias_list = "\n".join(f"- {b}" for b in biases)
-        demographic_bias_context = (
-            "\n## DEMOGRAPHIC BIAS CONTEXT\n"
-            "\n"
-            "Polymarket's user base is approximately 73% male, concentrated ages 25-45, ~31% US-based,\n"
-            "with strong crypto/tech affinity and a documented right-leaning political skew.\n"
-            "\n"
+
+        # Map bias categories to correction guidance
+        guidance_lines = []
+        for bias in biases:
+            if bias == "political_right_bias":
+                guidance_lines.append(
+                    "- This market involves right-leaning political content. "
+                    "The user base tends to overestimate right-leaning outcomes. "
+                    "Consider whether the current price is inflated."
+                )
+            elif bias == "political_left_bias":
+                guidance_lines.append(
+                    "- This market involves left-leaning political content. "
+                    "The user base may systematically underestimate left-leaning outcomes. "
+                    "Consider whether the current price is deflated."
+                )
+            elif bias == "crypto_optimism":
+                guidance_lines.append(
+                    "- This market involves cryptocurrency. "
+                    "The user base has strong crypto enthusiasm and may overestimate "
+                    "positive crypto outcomes. Apply skepticism to bullish pricing."
+                )
+            elif bias in ("geographic_blind_spots", "non_us_politics"):
+                guidance_lines.append(
+                    "- This market involves a region/topic unfamiliar to most users. "
+                    "Low user familiarity increases mispricing potential. "
+                    "Your external knowledge may provide significant edge here."
+                )
+            elif bias == "gender_topics":
+                guidance_lines.append(
+                    "- This market touches on gender-related topics. "
+                    "The male-dominated user base may have blind spots. "
+                    "Consider perspectives that may be underrepresented."
+                )
+            elif bias == "age_blind_spots":
+                guidance_lines.append(
+                    "- This market involves age demographics outside the 25-45 core. "
+                    "Users may have limited familiarity with these demographics."
+                )
+
+        guidance_text = "\n".join(guidance_lines) if guidance_lines else ""
+
+        bias_correction_section += (
             "This market was flagged for the following potential demographic biases:\n"
             f"{bias_list}\n"
             "\n"
             f"Likely bias direction: {direction}\n"
             f"Blind spot score: {blind_spot}/100\n"
             "\n"
-            "Consider whether this demographic skew may have distorted the current market price.\n"
-            "A high blind spot score means the topic is less familiar to the typical Polymarket user,\n"
-            "increasing the chance of mispricing.\n"
+            "**Specific correction guidance:**\n"
+            f"{guidance_text}\n"
+            "\n"
         )
+    else:
+        bias_correction_section += (
+            "No specific demographic biases were detected for this market, "
+            "but keep the user demographics in mind as a general check.\n"
+            "\n"
+        )
+
+    bias_correction_section += (
+        "Your probability_estimates should ALREADY INCORPORATE your bias correction.\n"
+        "\n"
+        'In addition to the standard fields, include a "bias_adjustment" field in your JSON:\n'
+        '```\n'
+        '"bias_adjustment": {\n'
+        '    "detected_biases": ["list of relevant bias categories"],\n'
+        '    "estimated_skew_direction": "overpriced|underpriced|neutral",\n'
+        '    "estimated_skew_magnitude": 0.0,\n'
+        '    "reasoning": "explanation of bias correction applied"\n'
+        '}\n'
+        '```\n'
+    )
+
+    demographic_bias_context = bias_correction_section
+
+    # Add polling data section if available
+    if market.raw_data and '_polling_data' in market.raw_data:
+        polling_data = market.raw_data['_polling_data']
+        if polling_data:
+            polling_lines = []
+            for poll in polling_data:
+                polling_lines.append(
+                    f"- {poll.get('entity', '?')}: {poll.get('percentage', '?')}% "
+                    f"(source: {poll.get('source', 'unknown')})"
+                )
+            polling_section = (
+                "\n## POLLING DATA\n"
+                "\n"
+                "Recent polling data found for this market:\n"
+                + "\n".join(polling_lines) + "\n"
+                "\n"
+                "**Caveat**: Polls have known biases including non-response bias, "
+                "likely voter screens, and herding effects. Use as one input among many.\n"
+            )
+            demographic_bias_context += polling_section
 
     # Build the prompt
     prompt = ASSESSMENT_PROMPT_TEMPLATE.format(

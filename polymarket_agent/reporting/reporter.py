@@ -132,6 +132,10 @@ def generate_csv_report(
         "model_used",
         "explanation",
         "warnings",
+        "bias_skew_direction",
+        "bias_skew_magnitude",
+        "spread_pct",
+        "net_edge",
     ]
     
     rows = []
@@ -161,8 +165,12 @@ def generate_csv_report(
             "liquidity": f"{market.market.liquidity:.0f}",
             "days_to_expiry": market.market.days_to_expiry or "N/A",
             "model_used": market.assessment.model_used,
-            "explanation": market.assessment.reasoning[:500],  # Truncate
+            "explanation": market.assessment.reasoning,
             "warnings": "; ".join(market.assessment.warnings),
+            "bias_skew_direction": (market.assessment.bias_adjustment or {}).get("estimated_skew_direction", ""),
+            "bias_skew_magnitude": (market.assessment.bias_adjustment or {}).get("estimated_skew_magnitude", ""),
+            "spread_pct": f"{market.spread_analysis['effective_spread_pct']:.4f}" if market.spread_analysis else "",
+            "net_edge": f"{market.spread_analysis['net_edge']:.4f}" if market.spread_analysis else "",
         }
         rows.append(row)
     
@@ -259,10 +267,10 @@ def _print_market_entry(market: ScoredMarket, show_details: bool = True) -> None
           f"Liquidity: ${market.market.liquidity:,.0f}")
     
     if show_details and market.assessment.reasoning:
-        # Truncate reasoning for display
-        reasoning = market.assessment.reasoning[:200]
-        if len(market.assessment.reasoning) > 200:
-            reasoning += "..."
+        reasoning = market.assessment.reasoning
+        # Keep console output concise — show first 500 chars
+        if len(reasoning) > 500:
+            reasoning = reasoning[:500] + "..."
         print(f"   Rationale: {reasoning}")
     
     # Show warnings if any
@@ -410,6 +418,36 @@ def generate_markdown_report(
         lines.append(f"| Model | {m.assessment.model_used} |")
         lines.append("")
 
+        # Spread analysis
+        if m.spread_analysis:
+            sa = m.spread_analysis
+            lines.append("**Spread / Slippage analysis**")
+            lines.append("")
+            if sa.get("bid_ask_spread") is not None:
+                lines.append(f"- **Bid-ask spread**: {sa['bid_ask_spread']:.4f}")
+                lines.append(f"- **Effective spread**: {sa['effective_spread_pct']:.2%}")
+                lines.append(f"- **Net edge**: {sa['net_edge']:.2%}")
+                lines.append(f"- **Tradeable**: {'Yes' if sa['is_tradeable'] else 'No'}")
+            else:
+                lines.append("- Orderbook data unavailable")
+            if sa.get("analysis_notes"):
+                for note in sa["analysis_notes"]:
+                    lines.append(f"- {note}")
+            lines.append("")
+
+        # Bias adjustment from LLM
+        if m.assessment.bias_adjustment:
+            ba = m.assessment.bias_adjustment
+            lines.append("**LLM bias adjustment**")
+            lines.append("")
+            lines.append(f"- **Skew direction**: {ba.get('estimated_skew_direction', 'neutral')}")
+            lines.append(f"- **Skew magnitude**: {ba.get('estimated_skew_magnitude', 0):.1%}")
+            if ba.get("detected_biases"):
+                lines.append(f"- **Bias categories**: {', '.join(ba['detected_biases'])}")
+            if ba.get("reasoning"):
+                lines.append(f"- **Reasoning**: {ba['reasoning']}")
+            lines.append("")
+
         # Demographic bias analysis (if bias filter populated raw_data)
         raw = m.market.raw_data or {}
         if '_detected_biases' in raw:
@@ -420,6 +458,8 @@ def generate_markdown_report(
             lines.append(f"- **Blind spot score**: {raw.get('_blind_spot_score', 0)}/100")
             mispricing_likelihood = "high" if raw.get('_blind_spot_score', 0) >= 40 else "moderate" if raw.get('_blind_spot_score', 0) >= 20 else "low"
             lines.append(f"- **Mispricing likelihood**: {mispricing_likelihood}")
+            if raw.get('_bias_llm_refined'):
+                lines.append(f"- **LLM-refined**: Yes (confidence: {raw.get('_bias_llm_confidence', 0):.0%})")
             lines.append("")
 
         # Score breakdown

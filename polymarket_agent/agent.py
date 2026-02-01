@@ -25,6 +25,7 @@ from polymarket_agent.llm_assessment import MarketAssessor
 from polymarket_agent.scoring import MarketScorer
 from polymarket_agent.reporting import Reporter
 from polymarket_agent.utils import setup_logging
+from polymarket_agent.storage.database import AnalysisDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,36 @@ class AgentResult:
     output_paths: dict[str, str]
     run_time_seconds: float
     errors: list[str]
+    run_id: Optional[str] = None
+
+
+def _evidence_quality_score(enrichment: Optional[EnrichedMarket]) -> float:
+    """Score an enrichment by how much useful evidence the web search found.
+
+    Used to prioritise which enriched candidates get sent to the (expensive)
+    LLM assessment step.  Markets with richer external context are more likely
+    to produce confident, well-grounded assessments.
+
+    Returns a score between 0 and 1.
+    """
+    if enrichment is None:
+        return 0.0
+
+    score = 0.0
+    # Source diversity: 0-5 sources → 0-0.35
+    score += min(len(enrichment.sources), 5) / 5 * 0.35
+    # Fact richness: 0-10 facts → 0-0.30
+    score += min(len(enrichment.key_facts), 10) / 10 * 0.30
+    # Context depth: 0-2000 chars → 0-0.20
+    score += min(len(enrichment.external_context), 2000) / 2000 * 0.20
+    # Freshness bonus: any freshness info → 0.10
+    if enrichment.context_freshness and enrichment.context_freshness != "unknown":
+        score += 0.10
+    # Polling data bonus → 0.05
+    if (enrichment.market.raw_data or {}).get("_polling_data"):
+        score += 0.05
+
+    return score
 
 
 class PolymarketAgent:
@@ -81,7 +112,15 @@ class PolymarketAgent:
         self.assessor = MarketAssessor(self.config)
         self.scorer = MarketScorer(self.config)
         self.reporter = Reporter(self.config)
-        
+
+        # Database
+        self.db: Optional[AnalysisDatabase] = None
+        if self.config.enable_database:
+            try:
+                self.db = AnalysisDatabase(self.config.db_path)
+            except Exception as e:
+                logger.warning(f"Failed to initialize database: {e}")
+
         # Validate setup
         self._validate_config()
     
@@ -113,16 +152,24 @@ class PolymarketAgent:
         """
         start_time = datetime.now()
         errors = []
-        
+        run_id = None
+
         print("\n🔍 Polymarket AI Agent Starting...\n")
-        
+
+        # Create database run record
+        if self.db:
+            try:
+                run_id = self.db.create_run(self.config)
+            except Exception as e:
+                logger.warning(f"Failed to create DB run: {e}")
+
         # Step 1: Fetch markets
         print("📥 Fetching active markets from Polymarket...")
         markets = await self._fetch_markets()
         print(f"   Found {len(markets)} active markets\n")
-        
+
         if not markets:
-            return AgentResult(
+            result = AgentResult(
                 markets_fetched=0,
                 markets_filtered=0,
                 markets_enriched=0,
@@ -131,18 +178,29 @@ class PolymarketAgent:
                 output_paths={},
                 run_time_seconds=(datetime.now() - start_time).total_seconds(),
                 errors=["No markets found"],
+                run_id=run_id,
             )
-        
+            if self.db and run_id:
+                self.db.complete_run(run_id, result)
+            return result
+
+        # Store fetched markets in DB
+        if self.db and run_id:
+            try:
+                self.db.store_markets(run_id, markets)
+            except Exception as e:
+                logger.warning(f"Failed to store markets in DB: {e}")
+
         # Step 2: Filter markets
         print("📊 Applying filters...")
-        
+
         filter_result = self.filter.apply(markets)
         filtered_markets = filter_result.markets
         print(f"   {filter_result.total_before} -> {filter_result.total_after} markets after filtering\n")
-        
+
         if not filtered_markets:
             print("⚠️  No markets passed filters. Try adjusting filter criteria.\n")
-            return AgentResult(
+            result = AgentResult(
                 markets_fetched=len(markets),
                 markets_filtered=0,
                 markets_enriched=0,
@@ -151,8 +209,12 @@ class PolymarketAgent:
                 output_paths={},
                 run_time_seconds=(datetime.now() - start_time).total_seconds(),
                 errors=["No markets passed filters"],
+                run_id=run_id,
             )
-        
+            if self.db and run_id:
+                self.db.complete_run(run_id, result)
+            return result
+
         # When bias filter is enabled, prioritize markets with higher blind spot scores
         if self.config.filters.bias_filter_enabled:
             filtered_markets.sort(
@@ -160,18 +222,44 @@ class PolymarketAgent:
                 reverse=True,
             )
 
-        # Limit for enrichment and assessment
+        # Step 2b: LLM-based bias refinement (Feature E)
+        if self.config.llm_bias_analysis and not self.config.dry_run:
+            print("🧠 Refining bias analysis with LLM...")
+            try:
+                from polymarket_agent.analysis.demographic_bias import analyze_bias_with_llm
+                from polymarket_agent.llm_assessment.providers import get_llm_client
+
+                bias_client = get_llm_client(self.config.llm_bias_model)
+                refined_count = 0
+                for market in filtered_markets:
+                    if market.raw_data and '_detected_biases' in market.raw_data:
+                        try:
+                            updated = await analyze_bias_with_llm(
+                                market, market.raw_data, bias_client,
+                                self.config.llm_bias_model,
+                            )
+                            if updated:
+                                market.raw_data.update(updated)
+                                refined_count += 1
+                        except Exception as e:
+                            logger.debug(f"LLM bias refinement failed for {market.id}: {e}")
+                print(f"   Refined bias for {refined_count} markets\n")
+            except Exception as e:
+                logger.warning(f"LLM bias analysis failed: {e}")
+                errors.append(f"LLM bias analysis error: {e}")
+
+        # Limit for enrichment
         candidates = filtered_markets[:self.config.enrichment_limit]
-        
+
         # Step 3: Enrich with web search (if not dry run)
         enrichments: dict[str, EnrichedMarket] = {}
-        
+
         if not self.config.dry_run:
             print(f"🔎 Enriching top {len(candidates)} candidates with web search...")
-            
+
             def on_enrich_progress(current, total):
                 print(f"\r   Enriching: {current}/{total}", end="")
-            
+
             try:
                 enriched_list = await enrich_markets_batch(
                     candidates,
@@ -183,19 +271,30 @@ class PolymarketAgent:
                 logger.error(f"Enrichment failed: {e}")
                 errors.append(f"Enrichment error: {e}")
                 print(f"\n   ⚠️ Enrichment failed: {e}\n")
-        
+
+        # Step 3b: Rank candidates by evidence quality, then pick best for LLM
+        if enrichments and len(candidates) > self.config.llm_analysis_limit:
+            candidates.sort(
+                key=lambda m: _evidence_quality_score(enrichments.get(m.id)),
+                reverse=True,
+            )
+            logger.info(
+                f"Ranked {len(candidates)} candidates by evidence quality, "
+                f"selecting top {self.config.llm_analysis_limit} for LLM"
+            )
+
         # Step 4: LLM Assessment (if not dry run)
         assessments = []
         assessment_markets = candidates[:self.config.llm_analysis_limit]
-        
+
         if self.config.dry_run:
             print("🔄 Dry run mode - skipping LLM assessment\n")
         else:
             print(f"🤖 Running LLM assessment ({self.config.llm_model})...")
-            
+
             def on_assess_progress(current, total):
                 print(f"\r   Assessing: {current}/{total}", end="")
-            
+
             try:
                 assessments = await self.assessor.assess_batch(
                     assessment_markets,
@@ -207,21 +306,65 @@ class PolymarketAgent:
                 logger.error(f"Assessment failed: {e}")
                 errors.append(f"Assessment error: {e}")
                 print(f"\n   ⚠️ Assessment failed: {e}\n")
-        
+
+        # Store assessments in DB
+        if self.db and run_id and assessments:
+            try:
+                self.db.store_assessments(run_id, assessments)
+            except Exception as e:
+                logger.warning(f"Failed to store assessments in DB: {e}")
+
         # Step 5: Score and rank
         print("📈 Scoring and ranking results...")
-        
+
+        ranked_markets = []
         if assessments:
+            # Step 5b: Spread analysis (Feature F)
+            spread_analyses = {}
+            if self.config.enable_spread_analysis and not self.config.dry_run:
+                print("📊 Analyzing orderbook spreads...")
+                try:
+                    from polymarket_agent.analysis.spread_analysis import analyze_spreads_batch
+                    mispricing_magnitudes = {
+                        a.market_id: a.mispricing_magnitude for a in assessments
+                    }
+                    spread_analyses = await analyze_spreads_batch(
+                        assessment_markets, mispricing_magnitudes
+                    )
+                    tradeable = sum(1 for s in spread_analyses.values() if s.is_tradeable)
+                    print(f"   Analyzed {len(spread_analyses)} markets, "
+                          f"{tradeable} tradeable after spread costs\n")
+                except Exception as e:
+                    logger.warning(f"Spread analysis failed: {e}")
+                    errors.append(f"Spread analysis error: {e}")
+
             scored_markets = self.scorer.score_all(
                 assessment_markets,
                 assessments,
                 enrichments,
             )
+
+            # Apply spread analysis data to scored markets
+            for sm in scored_markets:
+                if sm.market.id in spread_analyses:
+                    sa = spread_analyses[sm.market.id]
+                    sm.spread_analysis = sa.to_dict()
+                    # Re-score with spread penalty
+                    if sa.net_edge <= 0:
+                        sm.total_score *= 0.3
+                    elif sa.net_edge < 0.03:
+                        sm.total_score *= 0.7
+
             ranked_markets = self.scorer.rank(scored_markets)
             print(f"   Ranked {len(ranked_markets)} markets\n")
-        else:
-            ranked_markets = []
-        
+
+        # Store scores in DB
+        if self.db and run_id and ranked_markets:
+            try:
+                self.db.store_scores(run_id, ranked_markets)
+            except Exception as e:
+                logger.warning(f"Failed to store scores in DB: {e}")
+
         # Step 6: Generate reports
         output_paths = {}
         if ranked_markets:
@@ -229,12 +372,12 @@ class PolymarketAgent:
             output_paths = self.reporter.generate(ranked_markets)
             for fmt, path in output_paths.items():
                 print(f"   {fmt.upper()}: {path}")
-        
+
         # Calculate run time
         run_time = (datetime.now() - start_time).total_seconds()
         print(f"\n✅ Analysis complete in {run_time:.1f} seconds\n")
-        
-        return AgentResult(
+
+        result = AgentResult(
             markets_fetched=len(markets),
             markets_filtered=len(filtered_markets),
             markets_enriched=len(enrichments),
@@ -243,7 +386,17 @@ class PolymarketAgent:
             output_paths={k: str(v) for k, v in output_paths.items()},
             run_time_seconds=run_time,
             errors=errors,
+            run_id=run_id,
         )
+
+        # Complete DB run record
+        if self.db and run_id:
+            try:
+                self.db.complete_run(run_id, result)
+            except Exception as e:
+                logger.warning(f"Failed to complete DB run: {e}")
+
+        return result
     
     async def _fetch_markets(self) -> list[Market]:
         """

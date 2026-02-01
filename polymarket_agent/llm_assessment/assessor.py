@@ -102,6 +102,11 @@ def parse_assessment_response(
             mispricing_magnitude = mispricing_magnitude / 100
         mispricing_magnitude = max(0, min(1, mispricing_magnitude))
         
+        # Extract bias_adjustment if present
+        bias_adjustment = data.get("bias_adjustment")
+        if bias_adjustment and not isinstance(bias_adjustment, dict):
+            bias_adjustment = None
+
         return LLMAssessment(
             market_id=market.id,
             probability_estimates=prob_estimates,
@@ -114,6 +119,7 @@ def parse_assessment_response(
             mispricing_magnitude=mispricing_magnitude,
             warnings=data.get("warnings", []),
             model_used=model_used,
+            bias_adjustment=bias_adjustment,
         )
         
     except json.JSONDecodeError as e:
@@ -145,16 +151,17 @@ def parse_assessment_response(
 class MarketAssessor:
     """
     Handles LLM-based assessment of prediction markets.
-    
+
     Manages the LLM client, prompt construction, and response parsing.
-    
+    Supports single-model and multi-model consensus modes.
+
     Example:
         >>> assessor = MarketAssessor(config)
         >>> assessment = await assessor.assess(market, enrichment)
         >>> print(f"Confidence: {assessment.confidence}")
         >>> print(f"Mispricing: {assessment.mispricing_direction}")
     """
-    
+
     def __init__(
         self,
         config: AgentConfig,
@@ -162,14 +169,24 @@ class MarketAssessor:
     ):
         """
         Initialize the assessor.
-        
+
         Args:
             config: Agent configuration
             llm_client: Optional pre-configured LLM client
         """
         self.config = config
-        self.llm_client = llm_client or get_llm_client(config.llm_model)
         self.model_name = config.llm_model
+
+        # Consensus mode: multiple models
+        self.consensus_mode = bool(config.consensus_models)
+        if self.consensus_mode:
+            self.consensus_clients = {
+                model: get_llm_client(model) for model in config.consensus_models
+            }
+            self.llm_client = list(self.consensus_clients.values())[0]
+        else:
+            self.llm_client = llm_client or get_llm_client(config.llm_model)
+            self.consensus_clients = {}
     
     async def assess(
         self,
@@ -178,44 +195,55 @@ class MarketAssessor:
     ) -> LLMAssessment:
         """
         Assess a single market using the LLM.
-        
+
+        If consensus mode is enabled, runs multiple models concurrently
+        and aggregates their assessments.
+
         Args:
             market: Market to assess
             enrichment: Optional enrichment with external context
-            
+
         Returns:
             LLMAssessment with probability estimates and analysis
         """
-        # Build the prompt
+        if self.consensus_mode:
+            return await self._assess_consensus(market, enrichment)
+        return await self._assess_single(market, enrichment, self.llm_client, self.model_name)
+
+    async def _assess_single(
+        self,
+        market: Market,
+        enrichment: Optional[EnrichedMarket],
+        client: LLMClient,
+        model_name: str,
+    ) -> LLMAssessment:
+        """Assess a single market with a single model."""
         prompt = build_assessment_prompt(market, enrichment)
-        
-        # Call the LLM
+
         try:
-            response = await self.llm_client.complete(
+            response = await client.complete(
                 prompt=prompt,
                 system_prompt=SYSTEM_PROMPT,
                 max_tokens=self.config.llm_config.get("max_tokens", 4096),
-                temperature=0.3,  # Lower temperature for more consistent analysis
+                temperature=0.3,
             )
-            
+
             logger.debug(
-                f"LLM response for {market.slug}: "
+                f"LLM response for {market.slug} ({model_name}): "
                 f"{response.input_tokens} in, {response.output_tokens} out"
             )
-            
-            # Parse the response
+
             assessment = parse_assessment_response(
                 response.content,
                 market,
-                self.model_name,
+                model_name,
             )
-            
+
             return assessment
-            
+
         except Exception as e:
-            logger.error(f"LLM assessment failed for {market.slug}: {e}")
-            
-            # Return fallback assessment
+            logger.error(f"LLM assessment failed for {market.slug} ({model_name}): {e}")
+
             return LLMAssessment(
                 market_id=market.id,
                 probability_estimates={
@@ -230,8 +258,51 @@ class MarketAssessor:
                 mispricing_direction="fair",
                 mispricing_magnitude=0,
                 warnings=[f"LLM error: {str(e)[:100]}"],
-                model_used=self.model_name,
+                model_used=model_name,
             )
+
+    async def _assess_consensus(
+        self,
+        market: Market,
+        enrichment: Optional[EnrichedMarket],
+    ) -> LLMAssessment:
+        """Assess using multiple models and aggregate via consensus."""
+        from polymarket_agent.llm_assessment.consensus import aggregate_assessments
+
+        # Run all models concurrently
+        tasks = []
+        for model_name, client in self.consensus_clients.items():
+            tasks.append(self._assess_single(market, enrichment, client, model_name))
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Filter out exceptions
+        valid_assessments = []
+        for r in results:
+            if isinstance(r, LLMAssessment) and r.confidence > 0.1:
+                valid_assessments.append(r)
+            elif isinstance(r, Exception):
+                logger.warning(f"Consensus model failed: {r}")
+
+        if not valid_assessments:
+            # All failed, return fallback
+            return LLMAssessment(
+                market_id=market.id,
+                probability_estimates={
+                    o.name: (max(0, o.price - 0.15), min(1, o.price + 0.15))
+                    for o in market.outcomes
+                },
+                confidence=0.1,
+                reasoning="All consensus models failed",
+                mispricing_detected=False,
+                mispricing_direction="fair",
+                mispricing_magnitude=0,
+                warnings=["All consensus models failed"],
+                model_used="consensus:none",
+            )
+
+        consensus = aggregate_assessments(valid_assessments)
+        return consensus.to_llm_assessment(market.id)
     
     async def assess_batch(
         self,

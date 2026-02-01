@@ -134,15 +134,10 @@ Examples:
         help="Filter by LLM edge likelihood (default: high medium)",
     )
     filter_group.add_argument(
-        "--bias-filter",
-        action="store_true",
-        help="Filter for markets with demographic bias potential (mispricing due to user blind spots)",
-    )
-    filter_group.add_argument(
         "--min-blind-spot-score",
         type=float,
         default=10,
-        help="Minimum blind spot score for --bias-filter (default: 10)",
+        help="Minimum blind spot score for bias filter (default: 10)",
     )
     filter_group.add_argument(
         "--mispricing-levels",
@@ -150,6 +145,13 @@ Examples:
         choices=["high", "medium", "low"],
         default=["high", "medium"],
         help="Filter by mispricing likelihood (default: high medium)",
+    )
+    filter_group.add_argument(
+        "--max-markets-per-event",
+        type=int,
+        default=None,
+        help="Exclude events with more than N sub-markets (e.g., 5). "
+             "Filters out 'one market per candidate' events like elections.",
     )
 
     # Risk and Scoring
@@ -182,6 +184,45 @@ Examples:
         help="Maximum markets to analyze with LLM (default: 15)",
     )
     
+    # Database
+    db_group = parser.add_argument_group("Database")
+    db_group.add_argument(
+        "--no-db",
+        action="store_true",
+        help="Disable database storage",
+    )
+    db_group.add_argument(
+        "--db-path",
+        type=str,
+        default=None,
+        help="Custom database path (default: data/polymarket_analysis.db)",
+    )
+
+    # Spread analysis
+    spread_group = parser.add_argument_group("Spread Analysis")
+    spread_group.add_argument(
+        "--spread-analysis",
+        action="store_true",
+        help="Enable spread/slippage analysis on ranked markets",
+    )
+
+    # LLM bias analysis
+    bias_llm_group = parser.add_argument_group("LLM Bias Analysis")
+    bias_llm_group.add_argument(
+        "--llm-bias-analysis",
+        action="store_true",
+        help="Enable LLM-based bias direction refinement",
+    )
+
+    # Multi-model consensus
+    consensus_group = parser.add_argument_group("Multi-Model Consensus")
+    consensus_group.add_argument(
+        "--consensus-models",
+        nargs="+",
+        default=[],
+        help="Run multiple models for consensus (e.g., claude-sonnet-4-5 gpt-5-mini)",
+    )
+
     # Run modes
     mode_group = parser.add_argument_group("Run Modes")
     mode_group.add_argument(
@@ -224,7 +265,21 @@ def build_config(args: argparse.Namespace) -> AgentConfig:
             config.dry_run = True
         if args.verbose:
             config.verbose = True
-        
+
+        # New feature flags from CLI
+        if args.no_db:
+            config.enable_database = False
+        if args.db_path:
+            config.db_path = args.db_path
+        if args.spread_analysis:
+            config.enable_spread_analysis = True
+        if args.llm_bias_analysis:
+            config.llm_bias_analysis = True
+        if args.consensus_models:
+            config.consensus_models = args.consensus_models
+        if args.max_markets_per_event is not None:
+            config.filters.max_markets_per_event = args.max_markets_per_event
+
         return config
     
     # Build from CLI arguments
@@ -241,9 +296,9 @@ def build_config(args: argparse.Namespace) -> AgentConfig:
         reasoning_heavy_only=args.reasoning_heavy,
         min_reasoning_score=args.min_reasoning_score,
         llm_edge_levels=args.llm_edge,
-        bias_filter_enabled=args.bias_filter,
         min_blind_spot_score=args.min_blind_spot_score,
         mispricing_levels=args.mispricing_levels,
+        max_markets_per_event=args.max_markets_per_event,
     )
     
     return AgentConfig(
@@ -256,6 +311,11 @@ def build_config(args: argparse.Namespace) -> AgentConfig:
         output_format=args.format,
         verbose=args.verbose,
         dry_run=args.dry_run,
+        enable_database=not args.no_db,
+        db_path=args.db_path or "data/polymarket_analysis.db",
+        enable_spread_analysis=args.spread_analysis,
+        llm_bias_analysis=args.llm_bias_analysis,
+        consensus_models=args.consensus_models,
     )
 
 

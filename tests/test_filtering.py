@@ -18,6 +18,7 @@ from polymarket_agent.filtering.filters import (
     filter_by_geography,
     filter_by_outcome_count,
     filter_by_price_range,
+    filter_by_event_market_count,
 )
 from polymarket_agent.config import FilterConfig
 
@@ -31,6 +32,7 @@ def create_test_market(
     liquidity: float = 5000,
     days_to_expiry: int = 30,
     outcomes: list[tuple[str, float]] = None,
+    event_id: str = None,
 ) -> Market:
     """Helper to create test Market objects."""
     if tags is None:
@@ -58,6 +60,7 @@ def create_test_market(
         created_at=datetime.now() - timedelta(days=7),
         active=True,
         closed=False,
+        event_id=event_id,
     )
 
 
@@ -362,5 +365,74 @@ class TestMarketFilter:
         
         market_filter = MarketFilter(config)
         result = market_filter(markets)  # Use as callable
-        
+
         assert len(result) == 1
+
+
+class TestFilterByEventMarketCount:
+    """Tests for multi-market event filtering."""
+
+    def test_excludes_oversized_events(self):
+        """Events with too many markets should be excluded entirely."""
+        markets = [
+            create_test_market(id=f"jp-{i}", event_id="japan-pm-election")
+            for i in range(10)
+        ] + [
+            create_test_market(id="standalone", event_id="small-event"),
+        ]
+        result = filter_by_event_market_count(markets, max_markets_per_event=5)
+        assert len(result) == 1
+        assert result[0].id == "standalone"
+
+    def test_keeps_small_events(self):
+        """Events at or below the threshold should be kept."""
+        markets = [
+            create_test_market(id=f"a-{i}", event_id="event-a")
+            for i in range(3)
+        ] + [
+            create_test_market(id=f"b-{i}", event_id="event-b")
+            for i in range(5)
+        ]
+        result = filter_by_event_market_count(markets, max_markets_per_event=5)
+        assert len(result) == 8  # all kept
+
+    def test_keeps_markets_without_event_id(self):
+        """Markets with no event_id should always pass."""
+        markets = [
+            create_test_market(id="no-event-1"),
+            create_test_market(id="no-event-2"),
+        ] + [
+            create_test_market(id=f"big-{i}", event_id="big-event")
+            for i in range(10)
+        ]
+        result = filter_by_event_market_count(markets, max_markets_per_event=5)
+        assert len(result) == 2
+        assert {m.id for m in result} == {"no-event-1", "no-event-2"}
+
+    def test_threshold_boundary(self):
+        """Exactly at threshold should pass, one above should not."""
+        at_limit = [
+            create_test_market(id=f"ok-{i}", event_id="event-ok")
+            for i in range(5)
+        ]
+        over_limit = [
+            create_test_market(id=f"over-{i}", event_id="event-over")
+            for i in range(6)
+        ]
+        result = filter_by_event_market_count(at_limit + over_limit, max_markets_per_event=5)
+        assert len(result) == 5
+        assert all(m.event_id == "event-ok" for m in result)
+
+    def test_integrated_with_filter_chain(self):
+        """Filter should work in MarketFilter chain via config."""
+        config = FilterConfig(max_markets_per_event=3)
+        markets = [
+            create_test_market(id=f"big-{i}", event_id="big", volume=10000, liquidity=5000)
+            for i in range(8)
+        ] + [
+            create_test_market(id="small-1", event_id="small", volume=10000, liquidity=5000),
+        ]
+        mf = MarketFilter(config)
+        result = mf.apply(markets)
+        assert result.total_after == 1
+        assert result.markets[0].id == "small-1"

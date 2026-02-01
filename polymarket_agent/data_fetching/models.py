@@ -120,7 +120,7 @@ class Market:
             "id": self.id,
             "slug": self.slug,
             "question": self.question,
-            "description": self.description[:500] if self.description else "",
+            "description": self.description or "",
             "outcomes": [
                 {"name": o.name, "token_id": o.token_id, "price": o.price}
                 for o in self.outcomes
@@ -302,6 +302,7 @@ class LLMAssessment:
     mispricing_magnitude: float = 0.0
     warnings: list[str] = field(default_factory=list)
     model_used: str = ""
+    bias_adjustment: Optional[dict] = None
     
     @property
     def primary_outcome_estimate(self) -> tuple[float, float]:
@@ -342,6 +343,7 @@ class ScoredMarket:
     risk_score: float = 0.0
     total_score: float = 0.0
     rank: int = 0
+    spread_analysis: Optional[dict] = None
     
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for reporting."""
@@ -372,4 +374,6 @@ class ScoredMarket:
                 "total": self.total_score,
             },
             "warnings": self.assessment.warnings,
+            "bias_adjustment": self.assessment.bias_adjustment,
+            "spread_analysis": self.spread_analysis,
         }

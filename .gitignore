@@ -1,5 +1,24 @@
-*.env
-venv/*
-.venv/*
+# Environment
+.env
+.venv/
+venv/
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Testing
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# Generated output (reports, database)
+# output/
+*.html
+data/

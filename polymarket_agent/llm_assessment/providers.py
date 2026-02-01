@@ -219,15 +219,25 @@ class OpenAIClient(LLMClient):
         messages.append({"role": "user", "content": prompt})
         
         try:
-            response = await client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=temperature,
-            )
-            
+            kwargs = {
+                "model": self.model,
+                "messages": messages,
+                "max_completion_tokens": max_tokens,
+                "temperature": temperature,
+            }
+
+            try:
+                response = await client.chat.completions.create(**kwargs)
+            except Exception as first_err:
+                # Some models (o-series, mini reasoning) reject temperature
+                if "temperature" in str(first_err).lower():
+                    kwargs.pop("temperature", None)
+                    response = await client.chat.completions.create(**kwargs)
+                else:
+                    raise
+
             choice = response.choices[0]
-            
+
             return LLMResponse(
                 content=choice.message.content or "",
                 model=self.model,
@@ -243,37 +253,38 @@ class OpenAIClient(LLMClient):
 
 class GoogleClient(LLMClient):
     """
-    Google Generative AI (Gemini) client.
-    
+    Google GenAI (Gemini) client.
+
     Supports Gemini Pro, Gemini Flash, and other Google models.
-    
+    Uses the google-genai SDK with native async support.
+
     Requires: GOOGLE_API_KEY environment variable
     Docs: https://ai.google.dev/docs
     """
-    
+
     def __init__(self, model: str = "gemini-2.5-flash", api_key: Optional[str] = None):
         super().__init__(model, api_key)
         self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
         self._client = None
-    
+
     @property
     def provider_name(self) -> str:
         return "Google"
-    
+
     def _get_client(self):
-        """Lazy initialization of the Google client."""
+        """Lazy initialization of the async Google GenAI client."""
         if self._client is None:
             try:
-                import google.generativeai as genai
-                genai.configure(api_key=self.api_key)
-                self._client = genai.GenerativeModel(self.model)
+                from google import genai
+                # .aio gives the native async client
+                self._client = genai.Client(api_key=self.api_key).aio
             except ImportError:
                 raise ImportError(
-                    "google-generativeai package not installed. "
-                    "Install with: pip install google-generativeai"
+                    "google-genai package not installed. "
+                    "Install with: pip install google-genai"
                 )
         return self._client
-    
+
     async def complete(
         self,
         prompt: str,
@@ -282,34 +293,32 @@ class GoogleClient(LLMClient):
         temperature: float = 0.3,
     ) -> LLMResponse:
         """Generate completion using Gemini."""
+        from google.genai import types
+
         client = self._get_client()
-        
-        # Combine system prompt with user prompt for Gemini
-        full_prompt = prompt
+
+        config = types.GenerateContentConfig(
+            max_output_tokens=max_tokens,
+            temperature=temperature,
+        )
         if system_prompt:
-            full_prompt = f"{system_prompt}\n\n---\n\n{prompt}"
-        
+            config.system_instruction = system_prompt
+
         try:
-            # Google's SDK is sync, run in executor
-            loop = asyncio.get_event_loop()
-            
-            def generate():
-                return client.generate_content(
-                    full_prompt,
-                    generation_config={
-                        "max_output_tokens": max_tokens,
-                        "temperature": temperature,
-                    }
-                )
-            
-            response = await loop.run_in_executor(None, generate)
-            
+            response = await client.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=config,
+            )
+
+            usage = response.usage_metadata
+
             return LLMResponse(
                 content=response.text,
                 model=self.model,
                 provider=self.provider_name,
-                input_tokens=0,  # Not provided by Gemini
-                output_tokens=0,
+                input_tokens=usage.prompt_token_count if usage else 0,
+                output_tokens=usage.candidates_token_count if usage else 0,
                 finish_reason="stop",
             )
         except Exception as e:
@@ -395,7 +404,7 @@ def validate_llm_setup(model: str) -> tuple[bool, str]:
         elif provider == LLMProvider.OPENAI:
             import openai
         elif provider == LLMProvider.GOOGLE:
-            import google.generativeai
+            from google import genai
     except ImportError as e:
         return False, f"Missing package: {e}"
     
