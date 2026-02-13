@@ -5,6 +5,8 @@ Data models for bias detection.
 from dataclasses import dataclass
 from enum import Enum
 
+from polymarket_agent.data_fetching.models import Market
+
 
 class BiasCategory(Enum):
     """Categories of bias that may affect Polymarket predictions."""
@@ -38,3 +40,21 @@ class BiasClassification:
     european: bool
     spain: bool
     reasoning: str
+
+
+@dataclass
+class ClassifiedMarket:
+    """A market with its bias classification."""
+
+    market: Market
+    classification: BiasClassification
+
+    @property
+    def volume(self) -> float:
+        """Market volume for convenience."""
+        return self.market.volume
+
+    @property
+    def liquidity(self) -> float:
+        """Market liquidity for convenience."""
+        return self.market.liquidity

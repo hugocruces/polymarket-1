@@ -11,6 +11,7 @@ import pytest
 from polymarket_agent.bias_detection.models import (
     BiasCategory,
     BiasClassification,
+    ClassifiedMarket,
 )
 from polymarket_agent.data_fetching.models import Market, Outcome
 
@@ -472,3 +473,53 @@ class TestClassifyMarket:
         mock_get_client.assert_called_once_with("claude-sonnet-4-5")
         assert result.dominated_by_bias is True
         assert BiasCategory.POLITICAL in result.categories
+
+
+class TestClassifiedMarket:
+    """Tests for ClassifiedMarket dataclass."""
+
+    def test_creation_and_access(self):
+        """Test ClassifiedMarket can be created and fields accessed."""
+        # Create a market
+        market = Market(
+            id="classified-test-123",
+            slug="classified-test-slug",
+            question="Will AI pass the Turing test by 2030?",
+            description="Test description for classified market",
+            outcomes=[
+                Outcome(name="Yes", token_id="token1", price=0.40),
+                Outcome(name="No", token_id="token2", price=0.60),
+            ],
+            volume=500000.0,
+            liquidity=75000.0,
+        )
+
+        # Create a bias classification
+        classification = BiasClassification(
+            market_id="classified-test-123",
+            dominated_by_bias=True,
+            categories=[BiasCategory.CRYPTO_OPTIMISM],
+            bias_score=65,
+            mispricing_direction="overpriced",
+            european=False,
+            spain=False,
+            reasoning="Tech-optimism bias may affect this market.",
+        )
+
+        # Create ClassifiedMarket
+        classified_market = ClassifiedMarket(
+            market=market,
+            classification=classification,
+        )
+
+        # Verify market.question is accessible
+        assert classified_market.market.question == "Will AI pass the Turing test by 2030?"
+
+        # Verify classification.bias_score is accessible
+        assert classified_market.classification.bias_score == 65
+
+        # Verify volume property works
+        assert classified_market.volume == 500000.0
+
+        # Verify liquidity property works
+        assert classified_market.liquidity == 75000.0
