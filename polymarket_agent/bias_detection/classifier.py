@@ -11,6 +11,7 @@ from typing import Any
 
 from polymarket_agent.bias_detection.models import BiasCategory, BiasClassification
 from polymarket_agent.data_fetching.models import Market
+from polymarket_agent.llm_assessment.providers import get_llm_client
 
 
 SYSTEM_PROMPT = """You are an expert analyst specializing in prediction market bias detection.
@@ -190,3 +191,36 @@ def parse_classification_response(response: str, market_id: str) -> BiasClassifi
             spain=False,
             reasoning="Failed to parse LLM response.",
         )
+
+
+async def classify_market(
+    market: Market,
+    model: str = "claude-haiku-4-5",
+) -> BiasClassification:
+    """
+    Classify a market for demographic bias potential using LLM.
+
+    This function sends the market details to an LLM to analyze whether
+    the market is susceptible to demographic biases that could lead to
+    mispricing based on Polymarket's user demographics.
+
+    Args:
+        market: The Market object to analyze for bias.
+        model: The LLM model to use for classification.
+            Defaults to "claude-haiku-4-5".
+
+    Returns:
+        A BiasClassification object containing the analysis results.
+    """
+    client = get_llm_client(model)
+    system_prompt = build_system_prompt()
+    user_prompt = build_user_prompt(market)
+
+    response = await client.complete(
+        prompt=user_prompt,
+        system_prompt=system_prompt,
+        max_tokens=500,
+        temperature=0.1,
+    )
+
+    return parse_classification_response(response.content, market.id)

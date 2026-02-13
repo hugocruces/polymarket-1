@@ -353,3 +353,122 @@ class TestParseClassificationResponse:
         assert classification.market_id == "market-md"
         assert classification.dominated_by_bias is True
         assert BiasCategory.PROGRESSIVE_SOCIAL in classification.categories
+
+
+class TestClassifyMarket:
+    """Tests for classify_market async function."""
+
+    @pytest.mark.asyncio
+    async def test_classify_market_returns_classification(self):
+        """Test classify_market calls LLM and returns BiasClassification."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from polymarket_agent.bias_detection.classifier import classify_market
+        from polymarket_agent.llm_assessment.providers import LLMResponse
+
+        # Create a mock market
+        market = Market(
+            id="test-market-async",
+            slug="test-async-slug",
+            question="Will Bitcoin reach $150k by end of 2025?",
+            description="Test description",
+            outcomes=[
+                Outcome(name="Yes", token_id="token1", price=0.70),
+                Outcome(name="No", token_id="token2", price=0.30),
+            ],
+        )
+
+        # Create mock LLM response
+        mock_response_content = json.dumps(
+            {
+                "dominated_by_bias": True,
+                "categories": ["crypto_optimism"],
+                "bias_score": 80,
+                "mispricing_direction": "overpriced",
+                "european": False,
+                "spain": False,
+                "reasoning": "Crypto enthusiast bias likely overpricing Yes outcome.",
+            }
+        )
+        mock_response = LLMResponse(
+            content=mock_response_content,
+            model="claude-haiku-4-5",
+            provider="Anthropic",
+            input_tokens=100,
+            output_tokens=50,
+        )
+
+        # Mock the LLM client
+        mock_client = MagicMock()
+        mock_client.complete = AsyncMock(return_value=mock_response)
+
+        with patch(
+            "polymarket_agent.bias_detection.classifier.get_llm_client",
+            return_value=mock_client,
+        ):
+            result = await classify_market(market)
+
+        # Verify the result
+        assert isinstance(result, BiasClassification)
+        assert result.market_id == "test-market-async"
+        assert result.dominated_by_bias is True
+        assert BiasCategory.CRYPTO_OPTIMISM in result.categories
+        assert result.bias_score == 80
+        assert result.mispricing_direction == "overpriced"
+        assert "Crypto enthusiast bias" in result.reasoning
+
+        # Verify the LLM client was called correctly
+        mock_client.complete.assert_called_once()
+        call_kwargs = mock_client.complete.call_args.kwargs
+        assert "max_tokens" in call_kwargs
+        assert call_kwargs["max_tokens"] == 500
+        assert call_kwargs["temperature"] == 0.1
+
+    @pytest.mark.asyncio
+    async def test_classify_market_uses_custom_model(self):
+        """Test classify_market accepts custom model parameter."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from polymarket_agent.bias_detection.classifier import classify_market
+        from polymarket_agent.llm_assessment.providers import LLMResponse
+
+        market = Market(
+            id="test-market-model",
+            slug="test-model-slug",
+            question="Will Trump win 2028?",
+            description="Test description",
+            outcomes=[
+                Outcome(name="Yes", token_id="token1", price=0.55),
+                Outcome(name="No", token_id="token2", price=0.45),
+            ],
+        )
+
+        mock_response = LLMResponse(
+            content=json.dumps(
+                {
+                    "dominated_by_bias": True,
+                    "categories": ["political"],
+                    "bias_score": 70,
+                    "mispricing_direction": "overpriced",
+                    "european": False,
+                    "spain": False,
+                    "reasoning": "Political bias detected.",
+                }
+            ),
+            model="claude-sonnet-4-5",
+            provider="Anthropic",
+        )
+
+        mock_client = MagicMock()
+        mock_client.complete = AsyncMock(return_value=mock_response)
+
+        with patch(
+            "polymarket_agent.bias_detection.classifier.get_llm_client",
+            return_value=mock_client,
+        ) as mock_get_client:
+            result = await classify_market(market, model="claude-sonnet-4-5")
+
+        # Verify the custom model was passed to get_llm_client
+        mock_get_client.assert_called_once_with("claude-sonnet-4-5")
+        assert result.dominated_by_bias is True
+        assert BiasCategory.POLITICAL in result.categories
