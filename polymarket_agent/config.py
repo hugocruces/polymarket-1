@@ -17,19 +17,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-class RiskTolerance(Enum):
-    """
-    Risk tolerance levels that affect scoring thresholds and market selection.
-    
-    - CONSERVATIVE: Only high-confidence, large mispricings (>20% deviation)
-    - MODERATE: Balanced approach (>10% deviation with reasonable confidence)
-    - AGGRESSIVE: Includes speculative opportunities (>5% deviation)
-    """
-    CONSERVATIVE = "conservative"
-    MODERATE = "moderate"
-    AGGRESSIVE = "aggressive"
-
-
 class LLMProvider(Enum):
     """Supported LLM providers."""
     ANTHROPIC = "anthropic"
@@ -61,36 +48,6 @@ DEFAULT_MAX_MARKETS = 500  # Maximum markets to fetch in one run
 DEFAULT_MIN_VOLUME = 1000  # Minimum trading volume in USD
 DEFAULT_MIN_LIQUIDITY = 500  # Minimum liquidity in USD
 DEFAULT_MAX_DAYS_TO_EXPIRY = 90  # Maximum days until market resolution
-DEFAULT_ENRICHMENT_LIMIT = 20  # Max markets to enrich with web search
-DEFAULT_LLM_ANALYSIS_LIMIT = 15  # Max markets to send to LLM
-
-# Scoring weights (should sum to 1.0)
-SCORING_WEIGHTS = {
-    "mispricing_magnitude": 0.30,
-    "model_confidence": 0.25,
-    "evidence_strength": 0.20,
-    "liquidity_score": 0.15,
-    "risk_adjustment": 0.10,
-}
-
-# Risk tolerance thresholds
-RISK_THRESHOLDS = {
-    RiskTolerance.CONSERVATIVE: {
-        "min_mispricing": 0.20,  # 20% minimum deviation
-        "min_confidence": 0.75,  # High confidence required
-        "max_uncertainty": 0.15,  # Low uncertainty in estimate
-    },
-    RiskTolerance.MODERATE: {
-        "min_mispricing": 0.10,  # 10% minimum deviation
-        "min_confidence": 0.55,  # Moderate confidence
-        "max_uncertainty": 0.25,
-    },
-    RiskTolerance.AGGRESSIVE: {
-        "min_mispricing": 0.05,  # 5% minimum deviation
-        "min_confidence": 0.35,  # Lower confidence acceptable
-        "max_uncertainty": 0.40,  # Higher uncertainty tolerated
-    },
-}
 
 # LLM Model mappings
 LLM_MODELS = {
@@ -190,14 +147,6 @@ class FilterConfig:
     tag_ids: list[int] = field(default_factory=list)  # Filter by Polymarket tag IDs
     min_outcomes: int = 2
     max_outcomes: Optional[int] = None
-    # Reasoning analysis filters
-    reasoning_heavy_only: bool = False  # Only include reasoning-heavy markets
-    min_reasoning_score: float = 20.0  # Minimum reasoning score (0-100)
-    llm_edge_levels: list[str] = field(default_factory=lambda: ["high", "medium"])  # Filter by LLM edge likelihood
-    # Demographic bias filters (based on Polymarket user demographics research)
-    bias_filter_enabled: bool = False  # Filter for markets with demographic bias potential
-    min_blind_spot_score: float = 10.0  # Minimum blind spot score (0-100), lower = more inclusive
-    mispricing_levels: list[str] = field(default_factory=lambda: ["high", "medium"])  # Filter by mispricing likelihood
     # Multi-market event filter
     max_markets_per_event: Optional[int] = None  # Exclude events with more markets than this (e.g., 5)
 
@@ -205,41 +154,17 @@ class FilterConfig:
 @dataclass
 class AgentConfig:
     """
-    Main configuration for the Polymarket Agent.
-    
-    Attributes:
-        filters: Market filtering configuration
-        risk_tolerance: Risk tolerance level for scoring
-        llm_model: LLM model identifier to use for assessment
-        max_markets_to_fetch: Maximum markets to retrieve from API
-        enrichment_limit: Maximum markets to enrich with web search
-        llm_analysis_limit: Maximum markets to analyze with LLM
-        output_dir: Directory for output reports
-        output_format: Output format(s) - "json", "csv", "markdown", or "both" (json+csv)
-        verbose: Enable verbose logging
-        dry_run: Skip LLM calls, only fetch and filter
+    Legacy configuration class (deprecated).
+
+    Note: For new code, use ScannerConfig from scanner_config.py instead.
+    This class is kept for backwards compatibility with existing code.
     """
     filters: FilterConfig = field(default_factory=FilterConfig)
-    risk_tolerance: RiskTolerance = RiskTolerance.MODERATE
     llm_model: str = DEFAULT_LLM_MODEL
     max_markets_to_fetch: int = DEFAULT_MAX_MARKETS
-    enrichment_limit: int = DEFAULT_ENRICHMENT_LIMIT
-    llm_analysis_limit: int = DEFAULT_LLM_ANALYSIS_LIMIT
     output_dir: str = "output"
-    output_format: str = "both"  # "json", "csv", "markdown", or "both"
     verbose: bool = False
-    dry_run: bool = False
-    # Database (Feature C)
-    enable_database: bool = True
-    db_path: str = "data/polymarket_analysis.db"
-    # Spread analysis (Feature F)
-    enable_spread_analysis: bool = False
-    # LLM bias analysis (Feature E)
-    llm_bias_analysis: bool = False
-    llm_bias_model: str = "claude-haiku-4-5"
-    # Multi-model consensus (Feature B)
-    consensus_models: list[str] = field(default_factory=list)
-    
+
     def __post_init__(self):
         """Validate configuration after initialization."""
         if self.llm_model not in LLM_MODELS:
@@ -248,64 +173,24 @@ class AgentConfig:
                 f"Unknown LLM model: {self.llm_model}. Available: {available}"
             )
 
-        if isinstance(self.risk_tolerance, str):
-            self.risk_tolerance = RiskTolerance(self.risk_tolerance)
-
-        # Validate consensus models
-        for model in self.consensus_models:
-            if model not in LLM_MODELS:
-                available = ", ".join(LLM_MODELS.keys())
-                raise ValueError(
-                    f"Unknown consensus model: {model}. Available: {available}"
-                )
-
-        # LLM bias analysis requires the keyword-based bias filter to run first
-        if self.llm_bias_analysis and not self.filters.bias_filter_enabled:
-            self.filters.bias_filter_enabled = True
-    
     @property
     def llm_config(self) -> dict:
         """Get the LLM configuration for the selected model."""
         return LLM_MODELS[self.llm_model]
-    
-    @property
-    def risk_thresholds(self) -> dict:
-        """Get the risk thresholds for the current risk tolerance."""
-        return RISK_THRESHOLDS[self.risk_tolerance]
-    
+
     @classmethod
     def from_yaml(cls, path: str | Path) -> "AgentConfig":
-        """
-        Load configuration from a YAML file.
-        
-        Args:
-            path: Path to the YAML configuration file
-            
-        Returns:
-            AgentConfig instance
-        """
+        """Load configuration from a YAML file."""
         with open(path, "r") as f:
             data = yaml.safe_load(f)
-        
-        # Parse filters if present
+
         filters_data = data.pop("filters", {})
         filters = FilterConfig(**filters_data) if filters_data else FilterConfig()
-        
-        # Parse risk tolerance
-        if "risk_tolerance" in data:
-            data["risk_tolerance"] = RiskTolerance(data["risk_tolerance"])
-        
-        # Handle nested llm config
+
         if "llm" in data:
             llm_config = data.pop("llm")
             if "model" in llm_config:
                 data["llm_model"] = llm_config["model"]
-
-        # Handle boolean coercion for YAML 'true'/'false' strings
-        for bool_key in ("enable_database", "enable_spread_analysis",
-                         "llm_bias_analysis"):
-            if bool_key in data and isinstance(data[bool_key], str):
-                data[bool_key] = data[bool_key].lower() in ("true", "1", "yes")
 
         return cls(filters=filters, **data)
 

@@ -1,26 +1,37 @@
 """
-Polymarket AI Agent
+Polymarket Bias Scanner
 
-An intelligent agent that monitors active markets on Polymarket, retrieves and 
-filters market data, uses LLMs to assess pricing, and outputs a ranked list of 
-potentially mispriced markets with explanations.
+Scans Polymarket for markets where demographic biases may create mispricing opportunities.
+Uses LLM classification to identify markets affected by:
+- Political bias (left/right leaning outcomes)
+- Progressive social bias (social issues, climate, etc.)
+- Crypto optimism bias (crypto/tech enthusiasm)
 
-This agent is designed for one-off analysis runs and emphasizes:
-- Modular architecture for easy customization
-- Multi-provider LLM support
-- Configurable risk tolerance
-- Transparent probabilistic reasoning
+Usage:
+    python -m polymarket_agent.scan [OPTIONS]
+
+Example:
+    python -m polymarket_agent.scan --min-volume 50000 --model claude-sonnet-4-5
 """
 
-from polymarket_agent.config import AgentConfig, FilterConfig, RiskTolerance
-from polymarket_agent.agent import PolymarketAgent
+from polymarket_agent.scanner import BiasScanner
+from polymarket_agent.scanner_config import ScannerConfig
+from polymarket_agent.bias_detection.models import (
+    BiasCategory,
+    BiasClassification,
+    ClassifiedMarket,
+)
+from polymarket_agent.config import FilterConfig, LLM_MODELS
 
-__version__ = "1.0.0"
-__author__ = "Polymarket AI Agent Team"
+__version__ = "2.0.0"
+__author__ = "Polymarket Bias Scanner Team"
 
 __all__ = [
-    "PolymarketAgent",
-    "AgentConfig", 
+    "BiasScanner",
+    "ScannerConfig",
+    "BiasCategory",
+    "BiasClassification",
+    "ClassifiedMarket",
     "FilterConfig",
-    "RiskTolerance",
+    "LLM_MODELS",
 ]
