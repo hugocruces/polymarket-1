@@ -1,8 +1,4 @@
-"""
-LLM Assessment Module
-
-Provides multi-provider LLM integration for market probability assessment.
-"""
+"""LLM provider clients."""
 
 from polymarket_agent.llm_assessment.providers import (
     LLMClient,
@@ -11,20 +7,6 @@ from polymarket_agent.llm_assessment.providers import (
     GoogleClient,
     get_llm_client,
 )
-from polymarket_agent.llm_assessment.assessor import (
-    MarketAssessor,
-    assess_market,
-    assess_markets_batch,
-)
-from polymarket_agent.llm_assessment.prompts import (
-    SYSTEM_PROMPT,
-    ASSESSMENT_PROMPT_TEMPLATE,
-    build_assessment_prompt,
-)
-from polymarket_agent.llm_assessment.consensus import (
-    ConsensusAssessment,
-    aggregate_assessments,
-)
 
 __all__ = [
     "LLMClient",
@@ -32,12 +14,4 @@ __all__ = [
     "OpenAIClient",
     "GoogleClient",
     "get_llm_client",
-    "MarketAssessor",
-    "assess_market",
-    "assess_markets_batch",
-    "SYSTEM_PROMPT",
-    "ASSESSMENT_PROMPT_TEMPLATE",
-    "build_assessment_prompt",
-    "ConsensusAssessment",
-    "aggregate_assessments",
 ]
