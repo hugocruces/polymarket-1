@@ -9,8 +9,6 @@ import os
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
-from pathlib import Path
-import yaml
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -32,12 +30,6 @@ class LLMProvider(Enum):
 GAMMA_API_BASE = "https://gamma-api.polymarket.com"
 GAMMA_EVENTS_ENDPOINT = f"{GAMMA_API_BASE}/events"
 GAMMA_MARKETS_ENDPOINT = f"{GAMMA_API_BASE}/markets"
-
-# CLOB API - For real-time prices and orderbook data
-CLOB_API_BASE = "https://clob.polymarket.com"
-CLOB_PRICE_ENDPOINT = f"{CLOB_API_BASE}/price"
-CLOB_BOOK_ENDPOINT = f"{CLOB_API_BASE}/book"
-CLOB_MARKETS_ENDPOINT = f"{CLOB_API_BASE}/markets"
 
 # ============================================================================
 # Default Configuration Values
@@ -151,50 +143,6 @@ class FilterConfig:
     max_markets_per_event: Optional[int] = None  # Exclude events with more markets than this (e.g., 5)
 
 
-@dataclass
-class AgentConfig:
-    """
-    Legacy configuration class (deprecated).
-
-    Note: For new code, use ScannerConfig from scanner_config.py instead.
-    This class is kept for backwards compatibility with existing code.
-    """
-    filters: FilterConfig = field(default_factory=FilterConfig)
-    llm_model: str = DEFAULT_LLM_MODEL
-    max_markets_to_fetch: int = DEFAULT_MAX_MARKETS
-    output_dir: str = "output"
-    verbose: bool = False
-
-    def __post_init__(self):
-        """Validate configuration after initialization."""
-        if self.llm_model not in LLM_MODELS:
-            available = ", ".join(LLM_MODELS.keys())
-            raise ValueError(
-                f"Unknown LLM model: {self.llm_model}. Available: {available}"
-            )
-
-    @property
-    def llm_config(self) -> dict:
-        """Get the LLM configuration for the selected model."""
-        return LLM_MODELS[self.llm_model]
-
-    @classmethod
-    def from_yaml(cls, path: str | Path) -> "AgentConfig":
-        """Load configuration from a YAML file."""
-        with open(path, "r") as f:
-            data = yaml.safe_load(f)
-
-        filters_data = data.pop("filters", {})
-        filters = FilterConfig(**filters_data) if filters_data else FilterConfig()
-
-        if "llm" in data:
-            llm_config = data.pop("llm")
-            if "model" in llm_config:
-                data["llm_model"] = llm_config["model"]
-
-        return cls(filters=filters, **data)
-
-
 def get_api_key(provider: LLMProvider) -> Optional[str]:
     """
     Get the API key for the specified LLM provider.
@@ -213,27 +161,3 @@ def get_api_key(provider: LLMProvider) -> Optional[str]:
     return os.getenv(key_names.get(provider, ""))
 
 
-def validate_api_keys(config: AgentConfig) -> list[str]:
-    """
-    Validate that required API keys are present.
-    
-    Args:
-        config: Agent configuration
-        
-    Returns:
-        List of missing key names (empty if all present)
-    """
-    missing = []
-    
-    llm_config = config.llm_config
-    provider = llm_config["provider"]
-    
-    if not get_api_key(provider):
-        key_names = {
-            LLMProvider.ANTHROPIC: "ANTHROPIC_API_KEY",
-            LLMProvider.OPENAI: "OPENAI_API_KEY",
-            LLMProvider.GOOGLE: "GOOGLE_API_KEY",
-        }
-        missing.append(key_names[provider])
-    
-    return missing
