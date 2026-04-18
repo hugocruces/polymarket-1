@@ -19,6 +19,6 @@ build/
 .idea/
 
 # Generated output (reports, database)
-# output/
+output/
 *.html
 data/
