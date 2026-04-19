@@ -17,20 +17,17 @@ llm:
   # Anthropic:  claude-sonnet-4-5 (recommended), claude-haiku-4-5 (cheapest), claude-opus-4-5 (best)
   # OpenAI:     gpt-5.2 (flagship), gpt-5-mini (fast)
   # Google:     gemini-3-pro-preview (best), gemini-3-flash-preview (cheapest)
-  model: claude-sonnet-4-5
+  model: claude-haiku-4-5
 
 # Run multiple models on each market and aggregate their estimates.
 # Higher agreement between models increases confidence in the assessment.
 # Leave empty or comment out to use a single model (faster, cheaper).
-consensus_models:
-  - claude-haiku-4-5
-#  - gpt-5-mini
-  - gemini-3-flash-preview
+consensus_models: []
 
 # How many markets to assess (most expensive step).
 # The agent enriches a few extra candidates, then picks the best-evidenced
 # ones for LLM assessment. Increase for broader coverage, decrease to save cost.
-llm_analysis_limit: 20
+llm_analysis_limit: 10
 enrichment_limit: 30
 
 
@@ -61,7 +58,7 @@ filters:
   # Examples:
   #   keywords: ["Trump", "Bitcoin", "Election"]
   #   keywords: ["Climate", "Gender", "Woke"]
-  keywords: []
+  keywords: ["Trump", "election", "Biden", "Congress", "Senate", "democrat", "republican"]
 
   # Exclude markets whose title contains any of these keywords.
   # Pre-populated to remove sports/entertainment markets, which are hard to
@@ -113,7 +110,7 @@ filters:
   # --- Volume & liquidity ---
 
   # Minimum trading volume in USD. Filters out illiquid, low-interest markets.
-  min_volume: 1000
+  min_volume: 500
   # Maximum trading volume. Set lower (e.g. 50000) to focus on under-the-radar
   # markets where mispricings are more likely to persist.
   max_volume: 80000
