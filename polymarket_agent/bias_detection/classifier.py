@@ -140,7 +140,7 @@ def parse_classification_response(response: str, market_id: str) -> BiasClassifi
 
 async def classify_market(
     market: Market,
-    model: str = "claude-haiku-4-5",
+    model: str = "claude-sonnet-4-6",
 ) -> BiasClassification:
     """Classify a market for demographic bias potential using LLM."""
     client = get_llm_client(model)

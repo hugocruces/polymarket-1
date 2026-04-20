@@ -20,7 +20,7 @@ class ScannerConfig:
     min_volume: float = 1000
     min_liquidity: float = 500
     max_days_to_expiry: int = 90
-    llm_model: str = "claude-haiku-4-5"
+    llm_model: str = "claude-sonnet-4-6"
     max_markets: int = 500
     output_dir: str = "output"
     verbose: bool = False
