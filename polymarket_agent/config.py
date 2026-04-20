@@ -68,32 +68,32 @@ LLM_MODELS = {
     # ==========================================================================
     # OpenAI Models
     # ==========================================================================
-    "o3": {
+    "gpt-5.4": {
         "provider": LLMProvider.OPENAI,
-        "model_id": "o3-2025-04-16",
-        "display_name": "OpenAI o3",
-        "max_tokens": 100000,
+        "model_id": "gpt-5.4",
+        "display_name": "GPT-5.4",
+        "max_tokens": 128000,
     },
-    "gpt-4.1": {
+    "gpt-5.4-mini": {
         "provider": LLMProvider.OPENAI,
-        "model_id": "gpt-4.1-2025-04-14",
-        "display_name": "GPT-4.1",
-        "max_tokens": 32768,
+        "model_id": "gpt-5.4-mini",
+        "display_name": "GPT-5.4 Mini",
+        "max_tokens": 128000,
     },
 
     # ==========================================================================
     # Google Gemini Models
     # ==========================================================================
-    "gemini-2.5-pro": {
+    "gemini-3.1-pro-preview": {
         "provider": LLMProvider.GOOGLE,
-        "model_id": "gemini-2.5-pro",
-        "display_name": "Gemini 2.5 Pro",
+        "model_id": "gemini-3.1-pro-preview",
+        "display_name": "Gemini 3.1 Pro (Preview)",
         "max_tokens": 8192,
     },
-    "gemini-2.5-flash": {
+    "gemini-3-flash-preview": {
         "provider": LLMProvider.GOOGLE,
-        "model_id": "gemini-2.5-flash",
-        "display_name": "Gemini 2.5 Flash",
+        "model_id": "gemini-3-flash-preview",
+        "display_name": "Gemini 3 Flash (Preview)",
         "max_tokens": 8192,
     },
 }
