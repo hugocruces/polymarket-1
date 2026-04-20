@@ -28,9 +28,6 @@ def sample_grouped_markets():
         dominated_by_bias=True,
         categories=[BiasCategory.POLITICAL],
         bias_score=75,
-        mispricing_direction="underpriced",
-        european=False,
-        spain=False,
         reasoning="Left-favorable outcome",
     )
 
@@ -51,9 +48,6 @@ def sample_grouped_markets():
         dominated_by_bias=True,
         categories=[BiasCategory.POLITICAL],
         bias_score=72,
-        mispricing_direction="underpriced",
-        european=True,
-        spain=True,
         reasoning="Spanish politics, left-leaning",
     )
 
@@ -71,17 +65,14 @@ class TestFormatCurrency:
     """Tests for format_currency function."""
 
     def test_millions(self):
-        """Test formatting millions."""
         assert format_currency(1_500_000) == "$1.5M"
         assert format_currency(2_000_000) == "$2.0M"
 
     def test_thousands(self):
-        """Test formatting thousands."""
         assert format_currency(50_000) == "$50K"
         assert format_currency(1_000) == "$1K"
 
     def test_small_amounts(self):
-        """Test formatting small amounts."""
         assert format_currency(500) == "$500"
         assert format_currency(0) == "$0"
 
@@ -90,102 +81,77 @@ class TestGenerateBiasReport:
     """Tests for generate_bias_report function."""
 
     def test_creates_file(self, sample_grouped_markets, tmp_path):
-        """Test that report file is created."""
         output_path = tmp_path / "report.md"
-
-        result = generate_bias_report(
-            grouped_markets=sample_grouped_markets,
-            output_path=output_path,
-        )
-
+        result = generate_bias_report(grouped_markets=sample_grouped_markets, output_path=output_path)
         assert result.exists()
         assert result == output_path
 
     def test_contains_header(self, sample_grouped_markets, tmp_path):
-        """Test that report contains header."""
         output_path = tmp_path / "report.md"
-
-        generate_bias_report(
-            grouped_markets=sample_grouped_markets,
-            output_path=output_path,
-        )
-
+        generate_bias_report(grouped_markets=sample_grouped_markets, output_path=output_path)
         content = output_path.read_text()
         assert "# Polymarket Bias Scanner Report" in content
         assert "Generated:" in content
 
     def test_contains_political_section(self, sample_grouped_markets, tmp_path):
-        """Test that report contains political bias section."""
         output_path = tmp_path / "report.md"
-
-        generate_bias_report(
-            grouped_markets=sample_grouped_markets,
-            output_path=output_path,
-        )
-
+        generate_bias_report(grouped_markets=sample_grouped_markets, output_path=output_path)
         content = output_path.read_text()
         assert "## Political Bias" in content
         assert "Will Democrats win the Senate?" in content
-        assert "underpriced" in content
         assert "75" in content  # bias score
 
     def test_contains_spain_flag(self, sample_grouped_markets, tmp_path):
-        """Test that Spain market has flag."""
+        """Sanchez in the market question triggers Spain detection."""
         output_path = tmp_path / "report.md"
-
-        generate_bias_report(
-            grouped_markets=sample_grouped_markets,
-            output_path=output_path,
-        )
-
+        generate_bias_report(grouped_markets=sample_grouped_markets, output_path=output_path)
         content = output_path.read_text()
         assert "🇪🇸" in content
 
-    def test_contains_footer(self, sample_grouped_markets, tmp_path):
-        """Test that report contains footer with filters."""
+    def test_no_direction_column(self, sample_grouped_markets, tmp_path):
+        """Direction column should not appear in the report."""
         output_path = tmp_path / "report.md"
+        generate_bias_report(grouped_markets=sample_grouped_markets, output_path=output_path)
+        content = output_path.read_text()
+        assert "Direction" not in content
+        assert "underpriced" not in content
+        assert "overpriced" not in content
 
+    def test_full_question_in_report(self, sample_grouped_markets, tmp_path):
+        """Market questions should not be truncated."""
+        output_path = tmp_path / "report.md"
+        generate_bias_report(grouped_markets=sample_grouped_markets, output_path=output_path)
+        content = output_path.read_text()
+        assert "Will Democrats win the Senate?" in content
+        assert "Will Sanchez survive confidence vote?" in content
+
+    def test_contains_footer(self, sample_grouped_markets, tmp_path):
+        output_path = tmp_path / "report.md"
         generate_bias_report(
             grouped_markets=sample_grouped_markets,
             output_path=output_path,
             min_volume=50000,
             min_liquidity=10000,
         )
-
         content = output_path.read_text()
         assert "Filters applied:" in content
         assert "min_volume=$50K" in content
         assert "Markets classified with bias: 2" in content
 
     def test_empty_categories_not_shown(self, sample_grouped_markets, tmp_path):
-        """Test that empty categories are not shown."""
         output_path = tmp_path / "report.md"
-
-        generate_bias_report(
-            grouped_markets=sample_grouped_markets,
-            output_path=output_path,
-        )
-
+        generate_bias_report(grouped_markets=sample_grouped_markets, output_path=output_path)
         content = output_path.read_text()
-        # Empty categories should not appear
         assert "## Progressive Social" not in content
         assert "## Crypto Optimism" not in content
 
     def test_creates_parent_directories(self, sample_grouped_markets, tmp_path):
-        """Test that parent directories are created."""
         output_path = tmp_path / "nested" / "dir" / "report.md"
-
-        generate_bias_report(
-            grouped_markets=sample_grouped_markets,
-            output_path=output_path,
-        )
-
+        generate_bias_report(grouped_markets=sample_grouped_markets, output_path=output_path)
         assert output_path.exists()
 
     def test_no_markets_message(self, tmp_path):
-        """Test message when no markets found."""
         output_path = tmp_path / "report.md"
-
         generate_bias_report(
             grouped_markets={
                 BiasCategory.POLITICAL: [],
@@ -194,6 +160,5 @@ class TestGenerateBiasReport:
             },
             output_path=output_path,
         )
-
         content = output_path.read_text()
         assert "No markets with bias potential found" in content

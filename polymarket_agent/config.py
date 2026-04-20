@@ -44,12 +44,12 @@ DEFAULT_MAX_DAYS_TO_EXPIRY = 90  # Maximum days until market resolution
 # LLM Model mappings
 LLM_MODELS = {
     # ==========================================================================
-    # Anthropic Claude Models (Latest)
+    # Anthropic Claude Models
     # ==========================================================================
-    "claude-sonnet-4-5": {
+    "claude-sonnet-4-6": {
         "provider": LLMProvider.ANTHROPIC,
-        "model_id": "claude-sonnet-4-5-20250929",
-        "display_name": "Claude Sonnet 4.5",
+        "model_id": "claude-sonnet-4-6",
+        "display_name": "Claude Sonnet 4.6",
         "max_tokens": 64000,
     },
     "claude-haiku-4-5": {
@@ -58,48 +58,48 @@ LLM_MODELS = {
         "display_name": "Claude Haiku 4.5",
         "max_tokens": 64000,
     },
-    "claude-opus-4-5": {
+    "claude-opus-4-7": {
         "provider": LLMProvider.ANTHROPIC,
-        "model_id": "claude-opus-4-5-20251101",
-        "display_name": "Claude Opus 4.5",
+        "model_id": "claude-opus-4-7",
+        "display_name": "Claude Opus 4.7",
         "max_tokens": 64000,
     },
 
     # ==========================================================================
-    # OpenAI Models (Latest)
+    # OpenAI Models
     # ==========================================================================
-    "gpt-5.2": {
+    "gpt-4o": {
         "provider": LLMProvider.OPENAI,
-        "model_id": "gpt-5.2-2025-12-11",
-        "display_name": "GPT-5.2",
+        "model_id": "gpt-4o",
+        "display_name": "GPT-4o",
         "max_tokens": 128000,
     },
-    "gpt-5-mini": {
+    "gpt-4o-mini": {
         "provider": LLMProvider.OPENAI,
-        "model_id": "gpt-5-mini-2025-08-07",
-        "display_name": "GPT-5 Mini",
+        "model_id": "gpt-4o-mini",
+        "display_name": "GPT-4o Mini",
         "max_tokens": 128000,
     },
 
     # ==========================================================================
-    # Google Gemini Models (Latest)
+    # Google Gemini Models
     # ==========================================================================
-    "gemini-3-pro-preview": {
+    "gemini-1.5-pro": {
         "provider": LLMProvider.GOOGLE,
-        "model_id": "gemini-3-pro-preview",
-        "display_name": "Gemini 3 Pro (Preview)",
+        "model_id": "gemini-1.5-pro",
+        "display_name": "Gemini 1.5 Pro",
         "max_tokens": 8192,
     },
-    "gemini-3-flash-preview": {
+    "gemini-1.5-flash": {
         "provider": LLMProvider.GOOGLE,
-        "model_id": "gemini-3-flash-preview",
-        "display_name": "Gemini 3 Flash (Preview)",
+        "model_id": "gemini-1.5-flash",
+        "display_name": "Gemini 1.5 Flash",
         "max_tokens": 8192,
     },
 }
 
 # Default model
-DEFAULT_LLM_MODEL = "claude-sonnet-4-5"
+DEFAULT_LLM_MODEL = "claude-sonnet-4-6"
 
 
 @dataclass

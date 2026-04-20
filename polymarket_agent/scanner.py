@@ -86,25 +86,23 @@ class BiasScanner:
         Returns:
             List of ClassifiedMarket objects that have bias potential.
         """
-        classified = []
         total = len(markets)
+        semaphore = asyncio.Semaphore(10)
 
-        for i, market in enumerate(markets):
-            try:
-                logger.debug(f"Classifying market {i+1}/{total}: {market.question[:50]}...")
-                classification = await classify_market(
-                    market,
-                    model=self.config.llm_model,
-                )
-                if classification.dominated_by_bias:
-                    classified.append(ClassifiedMarket(
-                        market=market,
-                        classification=classification,
-                    ))
-                    logger.debug(f"  -> Bias detected: {classification.categories}")
-            except Exception as e:
-                logger.error(f"Failed to classify market {market.id}: {e}")
+        async def classify_one(i: int, market: Market) -> Optional[ClassifiedMarket]:
+            async with semaphore:
+                try:
+                    logger.debug(f"Classifying market {i+1}/{total}: {market.question[:50]}...")
+                    classification = await classify_market(market, model=self.config.llm_model)
+                    if classification.dominated_by_bias:
+                        logger.debug(f"  -> Bias detected: {classification.categories}")
+                        return ClassifiedMarket(market=market, classification=classification)
+                except Exception as e:
+                    logger.error(f"Failed to classify market {market.id}: {e}")
+                return None
 
+        results = await asyncio.gather(*[classify_one(i, m) for i, m in enumerate(markets)])
+        classified = [r for r in results if r is not None]
         logger.info(f"Classified {len(classified)} markets with bias potential out of {total}")
         return classified
 
