@@ -24,6 +24,19 @@ def format_currency(value: float) -> str:
         return f"${value:.0f}"
 
 
+def generate_market_url(market_slug: str) -> str:
+    """
+    Generate a Polymarket URL for a given market slug.
+
+    Args:
+        market_slug: The market's slug (URL-friendly identifier).
+
+    Returns:
+        Full URL to the market on Polymarket.
+    """
+    return f"https://polymarket.com/market/{market_slug}"
+
+
 def generate_bias_report(
     grouped_markets: dict[BiasCategory, list[ClassifiedMarket]],
     output_path: str | Path,
@@ -70,8 +83,8 @@ def generate_bias_report(
 
         lines.append(f"## {title} ({len(markets)} markets)")
         lines.append("")
-        lines.append("| Rank | Market | Direction | Score | Volume | Liquidity | EU |")
-        lines.append("|------|--------|-----------|-------|--------|-----------|-----|")
+        lines.append("| Rank | Market | URL | Direction | Score | Volume | Liquidity | EU |")
+        lines.append("|------|--------|-----|-----------|-------|--------|-----------|-----|")
 
         for rank, cm in enumerate(markets, 1):
             market = cm.market
@@ -89,8 +102,12 @@ def generate_bias_report(
             if len(question) > 50:
                 question = question[:47] + "..."
 
+            # Generate market URL
+            market_url = generate_market_url(market.slug)
+            url_link = f"[🔗]({market_url})"
+
             lines.append(
-                f"| {rank} | {question} | {classification.mispricing_direction} | "
+                f"| {rank} | {question} | {url_link} | {classification.mispricing_direction} | "
                 f"{classification.bias_score} | {format_currency(market.volume)} | "
                 f"{format_currency(market.liquidity)} | {eu_flag} |"
             )
