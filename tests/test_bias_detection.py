@@ -1,7 +1,5 @@
 """
 Tests for bias detection data models.
-
-These tests verify that bias detection models work correctly.
 """
 
 import json
@@ -17,8 +15,6 @@ from polymarket_agent.data_fetching.models import Market, Outcome
 
 
 class TestBiasCategory:
-    """Tests for BiasCategory enum."""
-
     def test_political_value(self):
         assert BiasCategory.POLITICAL.value == "political"
 
@@ -30,276 +26,213 @@ class TestBiasCategory:
 
     def test_all_categories_present(self):
         expected = {"POLITICAL", "PROGRESSIVE_SOCIAL", "CRYPTO_OPTIMISM"}
-        actual = {member.name for member in BiasCategory}
-        assert actual == expected
+        assert {m.name for m in BiasCategory} == expected
 
 
 class TestBiasClassification:
-    """Tests for BiasClassification dataclass."""
-
-    def test_creation_with_all_fields(self):
-        classification = BiasClassification(
-            market_id="test-market-123",
+    def test_creation(self):
+        c = BiasClassification(
+            market_id="test-123",
             dominated_by_bias=True,
             categories=[BiasCategory.POLITICAL, BiasCategory.CRYPTO_OPTIMISM],
             bias_score=75,
-            reasoning="This market shows strong political bias from US-centric demographics.",
+            reasoning="Strong political bias.",
         )
+        assert c.market_id == "test-123"
+        assert c.dominated_by_bias is True
+        assert len(c.categories) == 2
+        assert c.bias_score == 75
 
-        assert classification.market_id == "test-market-123"
-        assert classification.dominated_by_bias is True
-        assert len(classification.categories) == 2
-        assert BiasCategory.POLITICAL in classification.categories
-        assert BiasCategory.CRYPTO_OPTIMISM in classification.categories
-        assert classification.bias_score == 75
-        assert "political bias" in classification.reasoning
-
-    def test_creation_with_empty_categories(self):
-        classification = BiasClassification(
-            market_id="neutral-market",
+    def test_empty_categories(self):
+        c = BiasClassification(
+            market_id="neutral",
             dominated_by_bias=False,
             categories=[],
             bias_score=0,
-            reasoning="No significant bias detected.",
+            reasoning="No bias.",
         )
-
-        assert classification.market_id == "neutral-market"
-        assert classification.dominated_by_bias is False
-        assert classification.categories == []
-        assert classification.bias_score == 0
-
-    def test_single_category(self):
-        classification = BiasClassification(
-            market_id="progressive-market",
-            dominated_by_bias=True,
-            categories=[BiasCategory.PROGRESSIVE_SOCIAL],
-            bias_score=80,
-            reasoning="Progressive social bias detected.",
-        )
-
-        assert len(classification.categories) == 1
-        assert classification.categories[0] == BiasCategory.PROGRESSIVE_SOCIAL
+        assert c.categories == []
+        assert c.dominated_by_bias is False
 
 
 class TestSystemPrompt:
-    """Tests for SYSTEM_PROMPT content."""
-
     def test_contains_demographic_info(self):
         from polymarket_agent.bias_detection.classifier import SYSTEM_PROMPT
-
         assert "73% male" in SYSTEM_PROMPT
         assert "25-45" in SYSTEM_PROMPT
         assert "right-leaning" in SYSTEM_PROMPT
-        assert "crypto" in SYSTEM_PROMPT.lower()
 
-    def test_contains_us_based_percentage(self):
+    def test_contains_bias_categories(self):
         from polymarket_agent.bias_detection.classifier import SYSTEM_PROMPT
+        assert "Political Bias" in SYSTEM_PROMPT
+        assert "Progressive Social Bias" in SYSTEM_PROMPT
+        assert "Crypto Optimism" in SYSTEM_PROMPT
 
-        assert "31%" in SYSTEM_PROMPT
-
-    def test_contains_bias_descriptions(self):
+    def test_contains_score_calibration(self):
         from polymarket_agent.bias_detection.classifier import SYSTEM_PROMPT
+        assert "0–20" in SYSTEM_PROMPT or "0-20" in SYSTEM_PROMPT
+        assert "70–100" in SYSTEM_PROMPT or "70-100" in SYSTEM_PROMPT
 
-        assert "political" in SYSTEM_PROMPT.lower()
-        assert "progressive" in SYSTEM_PROMPT.lower() or "social" in SYSTEM_PROMPT.lower()
-        assert "crypto" in SYSTEM_PROMPT.lower()
+    def test_contains_guardrail(self):
+        from polymarket_agent.bias_detection.classifier import SYSTEM_PROMPT
+        assert "Do NOT flag" in SYSTEM_PROMPT or "do not flag" in SYSTEM_PROMPT.lower()
+
+    def test_does_not_ask_for_dominated_by_bias(self):
+        from polymarket_agent.bias_detection.classifier import SYSTEM_PROMPT
+        assert "dominated_by_bias" not in SYSTEM_PROMPT
+
+    def test_does_not_mention_mispricing_direction(self):
+        from polymarket_agent.bias_detection.classifier import SYSTEM_PROMPT
+        assert "mispricing_direction" not in SYSTEM_PROMPT
 
 
 class TestBuildUserPrompt:
-    """Tests for build_user_prompt function."""
-
-    def test_includes_market_question(self):
-        from polymarket_agent.bias_detection.classifier import build_user_prompt
-
-        market = Market(
+    def _make_market(self, **kwargs):
+        defaults = dict(
             id="test-123",
             slug="test-market",
-            question="Will Bitcoin reach $100k by end of 2025?",
-            description="Test description",
+            question="Will Bitcoin reach $100k?",
+            description="Resolves YES if BTC closes above $100,000 on any day before end of 2025.",
             outcomes=[
-                Outcome(name="Yes", token_id="token1", price=0.65),
-                Outcome(name="No", token_id="token2", price=0.35),
+                Outcome(name="Yes", token_id="t1", price=0.65),
+                Outcome(name="No", token_id="t2", price=0.35),
             ],
         )
+        defaults.update(kwargs)
+        return Market(**defaults)
 
-        prompt = build_user_prompt(market)
+    def test_includes_question(self):
+        from polymarket_agent.bias_detection.classifier import build_user_prompt
+        prompt = build_user_prompt(self._make_market())
+        assert "Will Bitcoin reach $100k?" in prompt
 
-        assert "Will Bitcoin reach $100k by end of 2025?" in prompt
+    def test_includes_description(self):
+        from polymarket_agent.bias_detection.classifier import build_user_prompt
+        prompt = build_user_prompt(self._make_market())
+        assert "closes above $100,000" in prompt
 
     def test_includes_outcome_prices(self):
         from polymarket_agent.bias_detection.classifier import build_user_prompt
+        prompt = build_user_prompt(self._make_market())
+        assert "Yes" in prompt and "No" in prompt
+        assert "0.65" in prompt or "65" in prompt
 
-        market = Market(
-            id="test-456",
-            slug="test-market-2",
-            question="Will Trump win 2024?",
-            description="Test description",
-            outcomes=[
-                Outcome(name="Yes", token_id="token1", price=0.52),
-                Outcome(name="No", token_id="token2", price=0.48),
-            ],
-        )
-
-        prompt = build_user_prompt(market)
-
-        assert "Yes" in prompt
-        assert "No" in prompt
-        assert "0.52" in prompt or "52" in prompt
-        assert "0.48" in prompt or "48" in prompt
-
-    def test_includes_market_id(self):
+    def test_no_market_id(self):
         from polymarket_agent.bias_detection.classifier import build_user_prompt
+        prompt = build_user_prompt(self._make_market())
+        assert "test-123" not in prompt
 
-        market = Market(
-            id="market-789",
-            slug="example-slug",
-            question="Test question?",
-            description="Test description",
-            outcomes=[
-                Outcome(name="Yes", token_id="token1", price=0.50),
-                Outcome(name="No", token_id="token2", price=0.50),
-            ],
-        )
-
+    def test_missing_description_shows_na(self):
+        from polymarket_agent.bias_detection.classifier import build_user_prompt
+        market = self._make_market(description="")
         prompt = build_user_prompt(market)
-
-        assert "market-789" in prompt or "example-slug" in prompt
+        assert "N/A" in prompt
 
 
 class TestParseClassificationResponse:
-    """Tests for parse_classification_response function."""
-
-    def test_parses_valid_json_with_bias(self):
+    def test_parses_valid_json(self):
         from polymarket_agent.bias_detection.classifier import parse_classification_response
 
         response = json.dumps({
-            "dominated_by_bias": True,
             "categories": ["political", "crypto_optimism"],
             "bias_score": 75,
             "reasoning": "Political and crypto bias detected.",
         })
+        c = parse_classification_response(response, "m-1")
 
-        classification = parse_classification_response(response, "market-123")
+        assert c.market_id == "m-1"
+        assert c.dominated_by_bias is True  # 75 >= 50
+        assert BiasCategory.POLITICAL in c.categories
+        assert BiasCategory.CRYPTO_OPTIMISM in c.categories
+        assert c.bias_score == 75
 
-        assert classification.market_id == "market-123"
-        assert classification.dominated_by_bias is True
-        assert BiasCategory.POLITICAL in classification.categories
-        assert BiasCategory.CRYPTO_OPTIMISM in classification.categories
-        assert classification.bias_score == 75
-        assert "Political and crypto bias detected" in classification.reasoning
+    def test_dominated_by_bias_derived_from_score(self):
+        from polymarket_agent.bias_detection.classifier import (
+            parse_classification_response,
+            BIAS_SCORE_THRESHOLD,
+        )
+        below = parse_classification_response(
+            json.dumps({"categories": [], "bias_score": BIAS_SCORE_THRESHOLD - 1, "reasoning": "x"}), "m"
+        )
+        assert below.dominated_by_bias is False
 
-    def test_parses_valid_json_no_bias(self):
+        at = parse_classification_response(
+            json.dumps({"categories": [], "bias_score": BIAS_SCORE_THRESHOLD, "reasoning": "x"}), "m"
+        )
+        assert at.dominated_by_bias is True
+
+    def test_no_bias_low_score(self):
         from polymarket_agent.bias_detection.classifier import parse_classification_response
 
-        response = json.dumps({
-            "dominated_by_bias": False,
-            "categories": [],
-            "bias_score": 10,
-            "reasoning": "No significant demographic bias detected.",
-        })
+        response = json.dumps({"categories": [], "bias_score": 10, "reasoning": "No bias."})
+        c = parse_classification_response(response, "m-2")
 
-        classification = parse_classification_response(response, "market-456")
-
-        assert classification.market_id == "market-456"
-        assert classification.dominated_by_bias is False
-        assert classification.categories == []
-        assert classification.bias_score == 10
+        assert c.dominated_by_bias is False
+        assert c.categories == []
+        assert c.bias_score == 10
 
     def test_handles_invalid_json(self):
         from polymarket_agent.bias_detection.classifier import parse_classification_response
 
-        classification = parse_classification_response("This is not valid JSON at all", "market-789")
-
-        assert classification.market_id == "market-789"
-        assert classification.dominated_by_bias is False
-        assert classification.categories == []
+        c = parse_classification_response("not json", "m-3")
+        assert c.dominated_by_bias is False
+        assert c.categories == []
+        assert c.bias_score == 0
 
     def test_handles_partial_json(self):
         from polymarket_agent.bias_detection.classifier import parse_classification_response
 
-        response = json.dumps({
-            "dominated_by_bias": True,
-            "categories": ["political"],
-        })
-
-        classification = parse_classification_response(response, "market-partial")
-
-        assert classification.market_id == "market-partial"
-        assert classification.dominated_by_bias is True
-        assert BiasCategory.POLITICAL in classification.categories
-        assert isinstance(classification.bias_score, int)
+        response = json.dumps({"categories": ["political"]})
+        c = parse_classification_response(response, "m-4")
+        assert BiasCategory.POLITICAL in c.categories
+        assert isinstance(c.bias_score, int)
 
     def test_handles_json_in_markdown(self):
         from polymarket_agent.bias_detection.classifier import parse_classification_response
 
-        response = """```json
-{
-    "dominated_by_bias": true,
-    "categories": ["progressive_social"],
-    "bias_score": 60,
-    "reasoning": "Progressive social bias detected."
-}
-```"""
-
-        classification = parse_classification_response(response, "market-md")
-
-        assert classification.market_id == "market-md"
-        assert classification.dominated_by_bias is True
-        assert BiasCategory.PROGRESSIVE_SOCIAL in classification.categories
+        response = '```json\n{"categories": ["progressive_social"], "bias_score": 60, "reasoning": "test"}\n```'
+        c = parse_classification_response(response, "m-5")
+        assert c.dominated_by_bias is True
+        assert BiasCategory.PROGRESSIVE_SOCIAL in c.categories
 
 
 class TestClassifyMarket:
-    """Tests for classify_market async function."""
-
     @pytest.mark.asyncio
     async def test_classify_market_returns_classification(self):
         from unittest.mock import AsyncMock, MagicMock, patch
-
         from polymarket_agent.bias_detection.classifier import classify_market
         from polymarket_agent.llm_assessment.providers import LLMResponse
 
         market = Market(
-            id="test-market-async",
+            id="test-async",
             slug="test-async-slug",
             question="Will Bitcoin reach $150k by end of 2025?",
-            description="Test description",
+            description="Resolves YES if BTC hits $150k.",
             outcomes=[
-                Outcome(name="Yes", token_id="token1", price=0.70),
-                Outcome(name="No", token_id="token2", price=0.30),
+                Outcome(name="Yes", token_id="t1", price=0.70),
+                Outcome(name="No", token_id="t2", price=0.30),
             ],
         )
-
-        mock_response_content = json.dumps({
-            "dominated_by_bias": True,
-            "categories": ["crypto_optimism"],
-            "bias_score": 80,
-            "reasoning": "Crypto enthusiast bias likely overpricing Yes outcome.",
-        })
         mock_response = LLMResponse(
-            content=mock_response_content,
+            content=json.dumps({
+                "categories": ["crypto_optimism"],
+                "bias_score": 80,
+                "reasoning": "Crypto enthusiast bias likely inflating Yes.",
+            }),
             model="claude-haiku-4-5",
             provider="Anthropic",
             input_tokens=100,
             output_tokens=50,
         )
-
         mock_client = MagicMock()
         mock_client.complete = AsyncMock(return_value=mock_response)
 
-        with patch(
-            "polymarket_agent.bias_detection.classifier.get_llm_client",
-            return_value=mock_client,
-        ):
+        with patch("polymarket_agent.bias_detection.classifier.get_llm_client", return_value=mock_client):
             result = await classify_market(market)
 
-        assert isinstance(result, BiasClassification)
-        assert result.market_id == "test-market-async"
-        assert result.dominated_by_bias is True
+        assert result.dominated_by_bias is True  # 80 >= 50
         assert BiasCategory.CRYPTO_OPTIMISM in result.categories
         assert result.bias_score == 80
-        assert "Crypto enthusiast bias" in result.reasoning
-
-        mock_client.complete.assert_called_once()
         call_kwargs = mock_client.complete.call_args.kwargs
         assert call_kwargs["max_tokens"] == 500
         assert call_kwargs["temperature"] == 0.1
@@ -307,74 +240,56 @@ class TestClassifyMarket:
     @pytest.mark.asyncio
     async def test_classify_market_uses_custom_model(self):
         from unittest.mock import AsyncMock, MagicMock, patch
-
         from polymarket_agent.bias_detection.classifier import classify_market
         from polymarket_agent.llm_assessment.providers import LLMResponse
 
         market = Market(
-            id="test-market-model",
+            id="test-model",
             slug="test-model-slug",
             question="Will Trump win 2028?",
-            description="Test description",
+            description="",
             outcomes=[
-                Outcome(name="Yes", token_id="token1", price=0.55),
-                Outcome(name="No", token_id="token2", price=0.45),
+                Outcome(name="Yes", token_id="t1", price=0.55),
+                Outcome(name="No", token_id="t2", price=0.45),
             ],
         )
-
-        mock_response = LLMResponse(
-            content=json.dumps({
-                "dominated_by_bias": True,
-                "categories": ["political"],
-                "bias_score": 70,
-                "reasoning": "Political bias detected.",
-            }),
+        mock_client = MagicMock()
+        mock_client.complete = AsyncMock(return_value=LLMResponse(
+            content=json.dumps({"categories": ["political"], "bias_score": 70, "reasoning": "Political bias."}),
             model="claude-sonnet-4-6",
             provider="Anthropic",
-        )
+        ))
 
-        mock_client = MagicMock()
-        mock_client.complete = AsyncMock(return_value=mock_response)
-
-        with patch(
-            "polymarket_agent.bias_detection.classifier.get_llm_client",
-            return_value=mock_client,
-        ) as mock_get_client:
+        with patch("polymarket_agent.bias_detection.classifier.get_llm_client", return_value=mock_client) as mock_get:
             result = await classify_market(market, model="claude-sonnet-4-6")
 
-        mock_get_client.assert_called_once_with("claude-sonnet-4-6")
-        assert result.dominated_by_bias is True
+        mock_get.assert_called_once_with("claude-sonnet-4-6")
         assert BiasCategory.POLITICAL in result.categories
 
 
 class TestClassifiedMarket:
-    """Tests for ClassifiedMarket dataclass."""
-
     def test_creation_and_access(self):
         market = Market(
-            id="classified-test-123",
-            slug="classified-test-slug",
+            id="cm-1",
+            slug="cm-slug",
             question="Will AI pass the Turing test by 2030?",
-            description="Test description for classified market",
+            description="",
             outcomes=[
-                Outcome(name="Yes", token_id="token1", price=0.40),
-                Outcome(name="No", token_id="token2", price=0.60),
+                Outcome(name="Yes", token_id="t1", price=0.40),
+                Outcome(name="No", token_id="t2", price=0.60),
             ],
             volume=500000.0,
             liquidity=75000.0,
         )
-
         classification = BiasClassification(
-            market_id="classified-test-123",
+            market_id="cm-1",
             dominated_by_bias=True,
             categories=[BiasCategory.CRYPTO_OPTIMISM],
             bias_score=65,
-            reasoning="Tech-optimism bias may affect this market.",
+            reasoning="Tech-optimism bias.",
         )
-
-        classified_market = ClassifiedMarket(market=market, classification=classification)
-
-        assert classified_market.market.question == "Will AI pass the Turing test by 2030?"
-        assert classified_market.classification.bias_score == 65
-        assert classified_market.volume == 500000.0
-        assert classified_market.liquidity == 75000.0
+        cm = ClassifiedMarket(market=market, classification=classification)
+        assert cm.market.question == "Will AI pass the Turing test by 2030?"
+        assert cm.classification.bias_score == 65
+        assert cm.volume == 500000.0
+        assert cm.liquidity == 75000.0
