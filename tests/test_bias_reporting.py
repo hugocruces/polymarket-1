@@ -4,7 +4,13 @@ import pytest
 from pathlib import Path
 
 from polymarket_agent.bias_reporting import generate_bias_report, format_currency
-from polymarket_agent.bias_detection.models import BiasCategory, BiasClassification, ClassifiedMarket
+from polymarket_agent.bias_detection.models import (
+    BiasCategory,
+    BiasClassification,
+    ClassificationFailure,
+    ClassifiedMarket,
+    MispricingDirection,
+)
 from polymarket_agent.data_fetching.models import Market, Outcome
 
 
@@ -28,7 +34,7 @@ def sample_grouped_markets():
         dominated_by_bias=True,
         categories=[BiasCategory.POLITICAL],
         bias_score=75,
-        mispricing_direction="underpriced",
+        mispricing_direction=MispricingDirection.UNDERPRICED,
         european=False,
         spain=False,
         reasoning="Left-favorable outcome",
@@ -51,7 +57,7 @@ def sample_grouped_markets():
         dominated_by_bias=True,
         categories=[BiasCategory.POLITICAL],
         bias_score=72,
-        mispricing_direction="underpriced",
+        mispricing_direction=MispricingDirection.UNDERPRICED,
         european=True,
         spain=True,
         reasoning="Spanish politics, left-leaning",

@@ -3,7 +3,11 @@
 from datetime import datetime
 from pathlib import Path
 
-from polymarket_agent.bias_detection.models import BiasCategory, ClassifiedMarket
+from polymarket_agent.bias_detection.models import (
+    BiasCategory,
+    ClassificationFailure,
+    ClassifiedMarket,
+)
 
 
 def format_currency(value: float) -> str:
@@ -42,6 +46,7 @@ def generate_bias_report(
     output_path: str | Path,
     min_volume: float = 1000,
     min_liquidity: float = 500,
+    failures: list[ClassificationFailure] | None = None,
 ) -> Path:
     """
     Generate a markdown report of bias-classified markets.
@@ -51,12 +56,14 @@ def generate_bias_report(
         output_path: Path to write the report.
         min_volume: Minimum volume filter used (for footer).
         min_liquidity: Minimum liquidity filter used (for footer).
+        failures: Classification failures to surface in the report.
 
     Returns:
         Path to the generated report.
     """
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    failures = failures or []
 
     lines: list[str] = []
 
@@ -121,7 +128,7 @@ def generate_bias_report(
             url_link = f"[🔗]({generate_market_url(market.slug)})"
 
             lines.append(
-                f"| {rank} | {question} | {url_link} | {classification.mispricing_direction} | "
+                f"| {rank} | {question} | {url_link} | {classification.mispricing_direction.value} | "
                 f"{classification.bias_score} | {format_currency(market.volume)} | "
                 f"{format_currency(market.liquidity)} | {eu_flag} |"
             )
@@ -133,10 +140,26 @@ def generate_bias_report(
         lines.append("*No markets with bias potential found matching the criteria.*")
         lines.append("")
 
+    # Classification failures — surface so silent drops don't look like no-bias.
+    if failures:
+        lines.append(f"## Classification Failures ({len(failures)} markets)")
+        lines.append("")
+        lines.append("| # | Market | URL | Error |")
+        lines.append("|---|--------|-----|-------|")
+        for rank, failure in enumerate(failures, 1):
+            market = failure.market
+            question = market.question if len(market.question) <= 50 else market.question[:47] + "..."
+            url_link = f"[🔗]({generate_market_url(market.slug)})"
+            error = failure.error if len(failure.error) <= 80 else failure.error[:77] + "..."
+            lines.append(f"| {rank} | {question} | {url_link} | {error} |")
+        lines.append("")
+
     # Footer
     lines.append("---")
     lines.append(f"Filters applied: min_volume={format_currency(min_volume)}, min_liquidity={format_currency(min_liquidity)}")
     lines.append(f"Markets classified with bias: {total_markets}")
+    if failures:
+        lines.append(f"Classification failures: {len(failures)}")
 
     output_path.write_text("\n".join(lines), encoding="utf-8")
     return output_path

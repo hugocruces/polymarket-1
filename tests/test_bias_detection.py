@@ -11,7 +11,9 @@ import pytest
 from polymarket_agent.bias_detection.models import (
     BiasCategory,
     BiasClassification,
+    ClassificationError,
     ClassifiedMarket,
+    MispricingDirection,
 )
 from polymarket_agent.data_fetching.models import Market, Outcome
 
@@ -48,7 +50,7 @@ class TestBiasClassification:
             dominated_by_bias=True,
             categories=[BiasCategory.POLITICAL, BiasCategory.CRYPTO_OPTIMISM],
             bias_score=75,
-            mispricing_direction="overpriced",
+            mispricing_direction=MispricingDirection.OVERPRICED,
             european=False,
             spain=False,
             reasoning="This market shows strong political bias from US-centric demographics.",
@@ -60,7 +62,7 @@ class TestBiasClassification:
         assert BiasCategory.POLITICAL in classification.categories
         assert BiasCategory.CRYPTO_OPTIMISM in classification.categories
         assert classification.bias_score == 75
-        assert classification.mispricing_direction == "overpriced"
+        assert classification.mispricing_direction is MispricingDirection.OVERPRICED
         assert classification.european is False
         assert classification.spain is False
         assert "political bias" in classification.reasoning
@@ -72,7 +74,7 @@ class TestBiasClassification:
             dominated_by_bias=False,
             categories=[],
             bias_score=0,
-            mispricing_direction="unclear",
+            mispricing_direction=MispricingDirection.UNCLEAR,
             european=True,
             spain=False,
             reasoning="No significant bias detected.",
@@ -82,7 +84,7 @@ class TestBiasClassification:
         assert classification.dominated_by_bias is False
         assert classification.categories == []
         assert classification.bias_score == 0
-        assert classification.mispricing_direction == "unclear"
+        assert classification.mispricing_direction is MispricingDirection.UNCLEAR
         assert classification.european is True
         assert classification.spain is False
 
@@ -93,13 +95,13 @@ class TestBiasClassification:
             dominated_by_bias=True,
             categories=[BiasCategory.CRYPTO_OPTIMISM],
             bias_score=60,
-            mispricing_direction="underpriced",
+            mispricing_direction=MispricingDirection.UNDERPRICED,
             european=False,
             spain=False,
             reasoning="Crypto optimism may lead to underpricing of negative outcomes.",
         )
 
-        assert classification.mispricing_direction == "underpriced"
+        assert classification.mispricing_direction is MispricingDirection.UNDERPRICED
 
     def test_spain_implies_european(self):
         """Test classification with Spain set to True and European True."""
@@ -108,7 +110,7 @@ class TestBiasClassification:
             dominated_by_bias=False,
             categories=[],
             bias_score=10,
-            mispricing_direction="unclear",
+            mispricing_direction=MispricingDirection.UNCLEAR,
             european=True,
             spain=True,
             reasoning="Market about Spanish politics.",
@@ -124,7 +126,7 @@ class TestBiasClassification:
             dominated_by_bias=True,
             categories=[BiasCategory.PROGRESSIVE_SOCIAL],
             bias_score=80,
-            mispricing_direction="overpriced",
+            mispricing_direction=MispricingDirection.OVERPRICED,
             european=False,
             spain=False,
             reasoning="Progressive social bias detected.",
@@ -261,7 +263,7 @@ class TestParseClassificationResponse:
         assert BiasCategory.POLITICAL in classification.categories
         assert BiasCategory.CRYPTO_OPTIMISM in classification.categories
         assert classification.bias_score == 75
-        assert classification.mispricing_direction == "overpriced"
+        assert classification.mispricing_direction is MispricingDirection.OVERPRICED
         assert classification.european is False
         assert classification.spain is False
         assert "Political and crypto bias detected" in classification.reasoning
@@ -290,26 +292,22 @@ class TestParseClassificationResponse:
         assert classification.dominated_by_bias is False
         assert classification.categories == []
         assert classification.bias_score == 10
-        assert classification.mispricing_direction == "unclear"
+        assert classification.mispricing_direction is MispricingDirection.UNCLEAR
         assert classification.european is True
 
-    def test_handles_invalid_json(self):
-        """Test handling of invalid JSON returns default classification."""
+    def test_invalid_json_raises(self):
+        """Invalid JSON should raise ClassificationError, not silently default."""
         from polymarket_agent.bias_detection.classifier import (
             parse_classification_response,
         )
 
         response = "This is not valid JSON at all"
 
-        classification = parse_classification_response(response, "market-789")
+        with pytest.raises(ClassificationError):
+            parse_classification_response(response, "market-789")
 
-        # Should return a default/fallback classification
-        assert classification.market_id == "market-789"
-        assert classification.dominated_by_bias is False
-        assert classification.categories == []
-
-    def test_handles_partial_json(self):
-        """Test handling of JSON with missing fields uses defaults."""
+    def test_partial_json_raises(self):
+        """Missing required fields should raise ClassificationError."""
         from polymarket_agent.bias_detection.classifier import (
             parse_classification_response,
         )
@@ -318,18 +316,75 @@ class TestParseClassificationResponse:
             {
                 "dominated_by_bias": True,
                 "categories": ["political"],
-                # Missing other fields
+                # Missing bias_score, mispricing_direction, european, spain, reasoning
             }
         )
 
-        classification = parse_classification_response(response, "market-partial")
+        with pytest.raises(ClassificationError):
+            parse_classification_response(response, "market-partial")
 
-        assert classification.market_id == "market-partial"
-        assert classification.dominated_by_bias is True
-        assert BiasCategory.POLITICAL in classification.categories
-        # Missing fields should have sensible defaults
-        assert isinstance(classification.bias_score, int)
-        assert isinstance(classification.mispricing_direction, str)
+    def test_unknown_category_raises(self):
+        """Unknown category values should raise ClassificationError."""
+        from polymarket_agent.bias_detection.classifier import (
+            parse_classification_response,
+        )
+
+        response = json.dumps(
+            {
+                "dominated_by_bias": True,
+                "categories": ["made_up_category"],
+                "bias_score": 50,
+                "mispricing_direction": "overpriced",
+                "european": False,
+                "spain": False,
+                "reasoning": "n/a",
+            }
+        )
+
+        with pytest.raises(ClassificationError):
+            parse_classification_response(response, "market-bad-cat")
+
+    def test_invalid_direction_raises(self):
+        """Unknown mispricing_direction should raise ClassificationError."""
+        from polymarket_agent.bias_detection.classifier import (
+            parse_classification_response,
+        )
+
+        response = json.dumps(
+            {
+                "dominated_by_bias": True,
+                "categories": ["political"],
+                "bias_score": 50,
+                "mispricing_direction": "sideways",
+                "european": False,
+                "spain": False,
+                "reasoning": "n/a",
+            }
+        )
+
+        with pytest.raises(ClassificationError):
+            parse_classification_response(response, "market-bad-dir")
+
+    def test_out_of_range_score_raises(self):
+        """bias_score outside 0-100 should raise ClassificationError."""
+        from polymarket_agent.bias_detection.classifier import (
+            parse_classification_response,
+        )
+
+        response = json.dumps(
+            {
+                "dominated_by_bias": True,
+                "categories": ["political"],
+                "bias_score": 150,
+                "mispricing_direction": "overpriced",
+                "european": False,
+                "spain": False,
+                "reasoning": "n/a",
+            }
+        )
+
+        with pytest.raises(ClassificationError):
+            parse_classification_response(response, "market-bad-score")
 
     def test_handles_json_in_markdown(self):
         """Test parsing JSON wrapped in markdown code blocks."""
@@ -415,7 +470,7 @@ class TestClassifyMarket:
         assert result.dominated_by_bias is True
         assert BiasCategory.CRYPTO_OPTIMISM in result.categories
         assert result.bias_score == 80
-        assert result.mispricing_direction == "overpriced"
+        assert result.mispricing_direction is MispricingDirection.OVERPRICED
         assert "Crypto enthusiast bias" in result.reasoning
 
         # Verify the LLM client was called correctly

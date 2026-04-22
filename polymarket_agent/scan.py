@@ -129,12 +129,14 @@ async def main_async() -> int:
 
     # Run scanner
     scanner = BiasScanner(config)
-    grouped = await scanner.run()
+    result = await scanner.run()
+    grouped = result.grouped
+    failures = result.failures
 
     # Count results
     total = sum(len(markets) for markets in grouped.values())
 
-    if total == 0:
+    if total == 0 and not failures:
         print("No markets with bias potential found.")
         return 0
 
@@ -150,6 +152,7 @@ async def main_async() -> int:
         output_path=output_path,
         min_volume=config.min_volume,
         min_liquidity=config.min_liquidity,
+        failures=failures,
     )
 
     # Print summary
@@ -160,6 +163,8 @@ async def main_async() -> int:
         if markets:
             print(f"  {category.value}: {len(markets)} markets")
     print(f"\nTotal: {total} markets with bias potential")
+    if failures:
+        print(f"Classification failures: {len(failures)}")
     print(f"Report: {report_path}")
     print("=" * 60 + "\n")
 

@@ -1,12 +1,17 @@
 """Tests for bias scanner."""
 
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import patch, MagicMock
 
 from polymarket_agent.scanner import BiasScanner
 from polymarket_agent.scanner_config import ScannerConfig
 from polymarket_agent.data_fetching.models import Market, Outcome
-from polymarket_agent.bias_detection.models import BiasClassification, BiasCategory
+from polymarket_agent.bias_detection.models import (
+    BiasCategory,
+    BiasClassification,
+    ClassificationError,
+    MispricingDirection,
+)
 
 
 @pytest.fixture
@@ -73,7 +78,7 @@ class TestBiasScannerClassifyMarkets:
                 dominated_by_bias=True,
                 categories=[BiasCategory.POLITICAL],
                 bias_score=75,
-                mispricing_direction="underpriced",
+                mispricing_direction=MispricingDirection.UNDERPRICED,
                 european=False,
                 spain=False,
                 reasoning="Left-favorable",
@@ -83,7 +88,7 @@ class TestBiasScannerClassifyMarkets:
                 dominated_by_bias=False,
                 categories=[],
                 bias_score=0,
-                mispricing_direction="unclear",
+                mispricing_direction=MispricingDirection.UNCLEAR,
                 european=False,
                 spain=False,
                 reasoning="No bias detected",
@@ -94,12 +99,57 @@ class TestBiasScannerClassifyMarkets:
             # Make classify_market return different results for each call
             mock_classify.side_effect = mock_classifications
 
-            classified = await scanner.classify_markets(sample_markets)
+            classified, failures = await scanner.classify_markets(sample_markets)
 
-            # Should only return the one with bias
+            # Should only return the one with bias and no failures
             assert len(classified) == 1
             assert classified[0].market.id == "m1"
             assert classified[0].classification.bias_score == 75
+            assert failures == []
+
+    @pytest.mark.asyncio
+    async def test_classify_markets_surfaces_failures(self, sample_markets):
+        """ClassificationError should be caught and surfaced as a failure,
+        not dropped silently as if the market had no bias."""
+        config = ScannerConfig()
+        scanner = BiasScanner(config)
+
+        side_effects = [
+            ClassificationError("bad JSON"),
+            BiasClassification(
+                market_id="m2",
+                dominated_by_bias=True,
+                categories=[BiasCategory.CRYPTO_OPTIMISM],
+                bias_score=80,
+                mispricing_direction=MispricingDirection.OVERPRICED,
+                european=False,
+                spain=False,
+                reasoning="Crypto",
+            ),
+        ]
+
+        with patch('polymarket_agent.scanner.classify_market') as mock_classify:
+            mock_classify.side_effect = side_effects
+
+            classified, failures = await scanner.classify_markets(sample_markets)
+
+            assert len(classified) == 1
+            assert classified[0].market.id == "m2"
+            assert len(failures) == 1
+            assert failures[0].market.id == "m1"
+            assert "bad JSON" in failures[0].error
+
+    @pytest.mark.asyncio
+    async def test_classify_markets_reraises_config_errors(self, sample_markets):
+        """Unknown-model / missing-SDK errors should fail fast, not be swallowed."""
+        config = ScannerConfig()
+        scanner = BiasScanner(config)
+
+        with patch('polymarket_agent.scanner.classify_market') as mock_classify:
+            mock_classify.side_effect = ValueError("Unknown model: gpt-99")
+
+            with pytest.raises(ValueError):
+                await scanner.classify_markets(sample_markets)
 
 
 class TestBiasScannerGroupByCategory:

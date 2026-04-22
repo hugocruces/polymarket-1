@@ -7,9 +7,15 @@ and parse LLM responses into BiasClassification objects.
 
 import json
 import re
-from typing import Any
 
-from polymarket_agent.bias_detection.models import BiasCategory, BiasClassification
+from pydantic import BaseModel, Field, ValidationError, field_validator
+
+from polymarket_agent.bias_detection.models import (
+    BiasCategory,
+    BiasClassification,
+    ClassificationError,
+    MispricingDirection,
+)
 from polymarket_agent.data_fetching.models import Market
 from polymarket_agent.llm_assessment.providers import get_llm_client
 
@@ -73,6 +79,58 @@ Provide your analysis as a JSON object with the following fields:
 """
 
 
+_CATEGORY_ALIASES = {
+    "political": BiasCategory.POLITICAL,
+    "progressive_social": BiasCategory.PROGRESSIVE_SOCIAL,
+    "progressive social": BiasCategory.PROGRESSIVE_SOCIAL,
+    "crypto_optimism": BiasCategory.CRYPTO_OPTIMISM,
+    "crypto optimism": BiasCategory.CRYPTO_OPTIMISM,
+}
+
+
+class _LLMBiasResponse(BaseModel):
+    """Pydantic schema for validating the raw LLM JSON payload.
+
+    Kept internal to the classifier — callers receive a BiasClassification
+    dataclass built from this after validation.
+    """
+
+    dominated_by_bias: bool
+    categories: list[BiasCategory] = Field(default_factory=list)
+    bias_score: int = Field(ge=0, le=100)
+    mispricing_direction: MispricingDirection
+    european: bool
+    spain: bool
+    reasoning: str
+
+    @field_validator("categories", mode="before")
+    @classmethod
+    def _normalize_categories(cls, value: object) -> list[BiasCategory]:
+        if not isinstance(value, list):
+            raise ValueError("categories must be a list")
+        out: list[BiasCategory] = []
+        for item in value:
+            if isinstance(item, BiasCategory):
+                out.append(item)
+                continue
+            if not isinstance(item, str):
+                raise ValueError(f"category must be a string, got {type(item).__name__}")
+            key = item.lower().strip()
+            if key not in _CATEGORY_ALIASES:
+                raise ValueError(f"unknown category: {item!r}")
+            out.append(_CATEGORY_ALIASES[key])
+        return out
+
+    @field_validator("mispricing_direction", mode="before")
+    @classmethod
+    def _normalize_direction(cls, value: object) -> object:
+        if isinstance(value, MispricingDirection):
+            return value
+        if isinstance(value, str):
+            return value.lower().strip()
+        return value
+
+
 def build_system_prompt() -> str:
     """Return the system prompt for bias classification.
 
@@ -92,7 +150,6 @@ def build_user_prompt(market: Market) -> str:
     Returns:
         A formatted user prompt string with market details.
     """
-    # Format outcomes with names and prices
     outcomes_text = "\n".join(
         f"- {outcome.name}: {outcome.price:.2f} ({outcome.price * 100:.0f}%)"
         for outcome in market.outcomes
@@ -114,39 +171,15 @@ def _extract_json_from_response(response: str) -> str:
     Returns:
         The extracted JSON string.
     """
-    # Try to find JSON in markdown code blocks
     code_block_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", response, re.DOTALL)
     if code_block_match:
         return code_block_match.group(1).strip()
 
-    # Try to find raw JSON object
     json_match = re.search(r"\{.*\}", response, re.DOTALL)
     if json_match:
         return json_match.group(0)
 
     return response
-
-
-def _parse_categories(categories: list[Any]) -> list[BiasCategory]:
-    """Parse category strings into BiasCategory enum values.
-
-    Args:
-        categories: List of category strings.
-
-    Returns:
-        List of BiasCategory enum values.
-    """
-    result = []
-    for cat in categories:
-        if isinstance(cat, str):
-            cat_lower = cat.lower().strip()
-            if cat_lower == "political":
-                result.append(BiasCategory.POLITICAL)
-            elif cat_lower in ("progressive_social", "progressive social"):
-                result.append(BiasCategory.PROGRESSIVE_SOCIAL)
-            elif cat_lower in ("crypto_optimism", "crypto optimism"):
-                result.append(BiasCategory.CRYPTO_OPTIMISM)
-    return result
 
 
 def parse_classification_response(response: str, market_id: str) -> BiasClassification:
@@ -157,40 +190,33 @@ def parse_classification_response(response: str, market_id: str) -> BiasClassifi
         market_id: The market ID to associate with the classification.
 
     Returns:
-        A BiasClassification object. Returns a default classification
-        with no bias detected if parsing fails.
+        A BiasClassification object.
+
+    Raises:
+        ClassificationError: If the response is not valid JSON, is missing
+            required fields, or contains values outside the allowed ranges.
     """
+    json_str = _extract_json_from_response(response)
     try:
-        json_str = _extract_json_from_response(response)
         data = json.loads(json_str)
+    except json.JSONDecodeError as e:
+        raise ClassificationError(f"LLM response is not valid JSON: {e}") from e
 
-        # Parse categories
-        raw_categories = data.get("categories", [])
-        categories = _parse_categories(raw_categories)
+    try:
+        parsed = _LLMBiasResponse.model_validate(data)
+    except ValidationError as e:
+        raise ClassificationError(f"LLM response failed schema validation: {e}") from e
 
-        return BiasClassification(
-            market_id=market_id,
-            dominated_by_bias=bool(data.get("dominated_by_bias", False)),
-            categories=categories,
-            bias_score=int(data.get("bias_score", 0)),
-            mispricing_direction=str(data.get("mispricing_direction", "unclear")),
-            european=bool(data.get("european", False)),
-            spain=bool(data.get("spain", False)),
-            reasoning=str(data.get("reasoning", "Unable to determine bias.")),
-        )
-
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
-        # Return default classification if parsing fails
-        return BiasClassification(
-            market_id=market_id,
-            dominated_by_bias=False,
-            categories=[],
-            bias_score=0,
-            mispricing_direction="unclear",
-            european=False,
-            spain=False,
-            reasoning="Failed to parse LLM response.",
-        )
+    return BiasClassification(
+        market_id=market_id,
+        dominated_by_bias=parsed.dominated_by_bias,
+        categories=parsed.categories,
+        bias_score=parsed.bias_score,
+        mispricing_direction=parsed.mispricing_direction,
+        european=parsed.european,
+        spain=parsed.spain,
+        reasoning=parsed.reasoning,
+    )
 
 
 async def classify_market(
@@ -200,17 +226,17 @@ async def classify_market(
     """
     Classify a market for demographic bias potential using LLM.
 
-    This function sends the market details to an LLM to analyze whether
-    the market is susceptible to demographic biases that could lead to
-    mispricing based on Polymarket's user demographics.
-
     Args:
         market: The Market object to analyze for bias.
         model: The LLM model to use for classification.
-            Defaults to "claude-haiku-4-5".
 
     Returns:
         A BiasClassification object containing the analysis results.
+
+    Raises:
+        ClassificationError: If the LLM response cannot be parsed or
+            validated. Transport errors from the provider propagate
+            unchanged.
     """
     client = get_llm_client(model)
     system_prompt = build_system_prompt()
