@@ -67,6 +67,7 @@ class BiasScanner:
             min_volume=self.config.min_volume,
             min_liquidity=self.config.min_liquidity,
             max_days_to_expiry=self.config.max_days_to_expiry,
+            always_include_keywords=self.config.always_include_keywords,
         )
         market_filter = MarketFilter(filter_config)
         result = market_filter.apply(markets)

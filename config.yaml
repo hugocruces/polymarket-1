@@ -96,6 +96,34 @@ filters:
     - home run
     - goalkeeper
 
+  # Markets matching ANY of these keywords are always included, bypassing all
+  # other filters (volume, liquidity, geography, etc.).
+  # Useful for ensuring markets about specific politicians or topics are never
+  # silently dropped.
+  always_include_keywords:
+    # PSOE — historic & current leadership
+    - "Pedro Sanchez"
+    - "Zapatero"
+    - "Felipe Gonzalez"
+    - "Alfredo Perez Rubalcaba"
+    - "Joaquin Almunia"
+    - "Patxi Lopez"
+    - "Carmen Calvo"
+    - "Maria Jesus Montero"
+    - "Teresa Ribera"
+    - "Adriana Lastra"
+    - "Abalos"
+    - "Koldo"
+    # Podemos / Sumar / IU
+    - "Pablo Iglesias"
+    - "Yolanda Diaz"
+    - "Irene Montero"
+    - "Ione Belarra"
+    - "Alberto Garzon"
+    # Regional / municipal left
+    - "Ada Colau"
+    - "Monica Oltra"
+
   # Filter by Polymarket tag IDs (more precise than keyword matching).
   # Find IDs with: python scripts/list_tags.py --search "keyword"
   #   2: Politics  |  21: Crypto  |  96: Ukraine
@@ -110,12 +138,12 @@ filters:
   # --- Volume & liquidity ---
 
   # Minimum trading volume in USD. Filters out illiquid, low-interest markets.
-  min_volume: 500
+  min_volume: 5000
   # Maximum trading volume. Set lower (e.g. 50000) to focus on under-the-radar
   # markets where mispricings are more likely to persist.
-  max_volume: 80000
+  max_volume: 200000
 
-  min_liquidity: 50
+  min_liquidity: 2000
   max_liquidity: null  # null = no upper limit
 
   # --- Time horizon ---

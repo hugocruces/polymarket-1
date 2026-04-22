@@ -129,6 +129,7 @@ class FilterConfig:
     categories: list[str] = field(default_factory=list)
     keywords: list[str] = field(default_factory=list)
     exclude_keywords: list[str] = field(default_factory=list)
+    always_include_keywords: list[str] = field(default_factory=list)
     min_volume: float = DEFAULT_MIN_VOLUME
     max_volume: Optional[float] = None  # None = no upper limit
     min_liquidity: float = DEFAULT_MIN_LIQUIDITY

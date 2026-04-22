@@ -41,14 +41,14 @@ Examples:
     parser.add_argument(
         "--min-volume",
         type=float,
-        default=1000,
-        help="Minimum trading volume in USD (default: 1000)",
+        default=5000,
+        help="Minimum trading volume in USD (default: 5000)",
     )
     parser.add_argument(
         "--min-liquidity",
         type=float,
-        default=500,
-        help="Minimum liquidity in USD (default: 500)",
+        default=2000,
+        help="Minimum liquidity in USD (default: 2000)",
     )
     parser.add_argument(
         "--max-days",
