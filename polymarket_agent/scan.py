@@ -66,7 +66,14 @@ Examples:
         "--max-markets",
         type=int,
         default=500,
-        help="Maximum markets to fetch (default: 500)",
+        help="Maximum markets to fetch from API (default: 500)",
+    )
+    parser.add_argument(
+        "--max-reported",
+        type=int,
+        default=20,
+        help="Maximum normal (LLM-classified) markets to include in report (default: 20). "
+             "Always-monitored markets are exempt from this cap.",
     )
     parser.add_argument(
         "--output", "-o",
@@ -106,6 +113,7 @@ async def main_async() -> int:
         max_days_to_expiry=args.max_days,
         llm_model=args.model,
         max_markets=args.max_markets,
+        max_reported_markets=args.max_reported,
         verbose=args.verbose,
     )
 

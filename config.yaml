@@ -123,6 +123,27 @@ filters:
     # Regional / municipal left
     - "Ada Colau"
     - "Monica Oltra"
+    # UFO / UAP / extraterrestrial
+    - "UAP"
+    - "UFO"
+    - "extraterrestrial life"
+    - "alien life"
+    - "alien civilization"
+    - "alien contact"
+    - "alien disclosure"
+    - "Area 51"
+    - "Roswell"
+    - "first contact"
+    # Religious prophecy & end-times
+    - "Second Coming"
+    - "return of Jesus"
+    - "return of Christ"
+    - "Rapture"
+    - "End Times"
+    - "Antichrist"
+    - "Armageddon"
+    - "biblical prophecy"
+    - "apocalypse"
 
   # Filter by Polymarket tag IDs (more precise than keyword matching).
   # Find IDs with: python scripts/list_tags.py --search "keyword"

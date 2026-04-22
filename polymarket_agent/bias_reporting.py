@@ -65,14 +65,32 @@ def generate_bias_report(
     lines.append(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')} UTC")
     lines.append("")
 
-    # Category sections
+    total_markets = 0
+
+    # Always-monitored section (no LLM classification — rendered first).
+    always_monitored = grouped_markets.get(BiasCategory.ALWAYS_MONITORED, [])
+    if always_monitored:
+        total_markets += len(always_monitored)
+        lines.append(f"## Always Monitored ({len(always_monitored)} markets)")
+        lines.append("")
+        lines.append("| # | Market | URL | Volume | Liquidity |")
+        lines.append("|---|--------|-----|--------|-----------|")
+        for rank, cm in enumerate(always_monitored, 1):
+            market = cm.market
+            question = market.question if len(market.question) <= 50 else market.question[:47] + "..."
+            url_link = f"[🔗]({generate_market_url(market.slug)})"
+            lines.append(
+                f"| {rank} | {question} | {url_link} | "
+                f"{format_currency(market.volume)} | {format_currency(market.liquidity)} |"
+            )
+        lines.append("")
+
+    # LLM-classified bias-category sections.
     category_titles = {
         BiasCategory.POLITICAL: "Political Bias",
         BiasCategory.PROGRESSIVE_SOCIAL: "Progressive Social",
         BiasCategory.CRYPTO_OPTIMISM: "Crypto Optimism",
     }
-
-    total_markets = 0
 
     for category, title in category_titles.items():
         markets = grouped_markets.get(category, [])
@@ -90,21 +108,17 @@ def generate_bias_report(
             market = cm.market
             classification = cm.classification
 
-            # EU flag
             eu_flag = ""
             if classification.spain:
                 eu_flag = "🇪🇸"
             elif classification.european:
                 eu_flag = "🇪🇺"
 
-            # Truncate long questions
             question = market.question
             if len(question) > 50:
                 question = question[:47] + "..."
 
-            # Generate market URL
-            market_url = generate_market_url(market.slug)
-            url_link = f"[🔗]({market_url})"
+            url_link = f"[🔗]({generate_market_url(market.slug)})"
 
             lines.append(
                 f"| {rank} | {question} | {url_link} | {classification.mispricing_direction} | "

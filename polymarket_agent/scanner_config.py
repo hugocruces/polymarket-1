@@ -24,6 +24,7 @@ class ScannerConfig:
     max_days_to_expiry: int = 90
     llm_model: str = "claude-haiku-4-5"
     max_markets: int = 500
+    max_reported_markets: int = 20
     output_dir: str = "output"
     verbose: bool = False
     always_include_keywords: list[str] = field(default_factory=lambda: [
@@ -37,4 +38,11 @@ class ScannerConfig:
         "Ione Belarra", "Alberto Garzon",
         # Regional / municipal left
         "Ada Colau", "Monica Oltra",
+        # UFO / UAP / extraterrestrial
+        "UAP", "UFO", "extraterrestrial life", "alien life", "alien civilization",
+        "alien contact", "alien disclosure", "Area 51", "Roswell", "first contact",
+        # Religious prophecy & end-times
+        "Second Coming", "return of Jesus", "return of Christ",
+        "Rapture", "End Times", "Antichrist", "Armageddon", "biblical prophecy",
+        "apocalypse",
     ])
