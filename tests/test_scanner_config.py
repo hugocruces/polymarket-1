@@ -11,8 +11,8 @@ class TestScannerConfig:
         """Test ScannerConfig has sensible defaults."""
         config = ScannerConfig()
 
-        assert config.min_volume == 1000
-        assert config.min_liquidity == 500
+        assert config.min_volume == 5000
+        assert config.min_liquidity == 2000
         assert config.max_days_to_expiry == 90
         assert config.llm_model == "claude-haiku-4-5"
         assert config.max_markets == 500
@@ -49,5 +49,5 @@ class TestScannerConfig:
         assert config.min_volume == 25000
         assert config.llm_model == "gpt-5-mini"
         # Defaults should still apply
-        assert config.min_liquidity == 500
+        assert config.min_liquidity == 2000
         assert config.max_markets == 500

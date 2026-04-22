@@ -357,9 +357,28 @@ class MarketFilter:
             FilterResult with filtered markets and metadata
         """
         total_before = len(markets)
+
+        # Extract markets that must always be included, bypassing all other filters.
+        always_included: list[Market] = []
+        if self.config and self.config.always_include_keywords:
+            pattern = re.compile(
+                "|".join(re.escape(kw) for kw in self.config.always_include_keywords),
+                re.IGNORECASE,
+            )
+            remaining: list[Market] = []
+            for m in markets:
+                searchable = " ".join(filter(None, [
+                    m.question,
+                    m.description,
+                    m.event_title,
+                    " ".join(m.tags),
+                ]))
+                (always_included if pattern.search(searchable) else remaining).append(m)
+            markets = remaining
+
         filtered = markets.copy()
         filters_applied = []
-        
+
         for filter_func, kwargs in self._filters:
             before_count = len(filtered)
             filtered = filter_func(filtered, **kwargs)
@@ -372,10 +391,11 @@ class MarketFilter:
             
             logger.debug(f"Applied {filter_name}: {before_count} -> {after_count}")
         
+        final = always_included + filtered
         return FilterResult(
-            markets=filtered,
+            markets=final,
             total_before=total_before,
-            total_after=len(filtered),
+            total_after=len(final),
             filters_applied=filters_applied,
         )
     

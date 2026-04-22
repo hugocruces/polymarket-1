@@ -14,6 +14,7 @@ class BiasCategory(Enum):
     POLITICAL = "political"
     PROGRESSIVE_SOCIAL = "progressive_social"
     CRYPTO_OPTIMISM = "crypto_optimism"
+    ALWAYS_MONITORED = "always_monitored"
 
 
 @dataclass

@@ -33,7 +33,7 @@ class TestBiasCategory:
 
     def test_all_categories_present(self):
         """Test all expected categories are present."""
-        expected = {"POLITICAL", "PROGRESSIVE_SOCIAL", "CRYPTO_OPTIMISM"}
+        expected = {"POLITICAL", "PROGRESSIVE_SOCIAL", "CRYPTO_OPTIMISM", "ALWAYS_MONITORED"}
         actual = {member.name for member in BiasCategory}
         assert actual == expected
 

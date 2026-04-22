@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 from typing import Optional
 
 from polymarket_agent.scanner_config import ScannerConfig
@@ -9,7 +10,7 @@ from polymarket_agent.data_fetching.models import Market
 from polymarket_agent.data_fetching.gamma_api import fetch_active_markets
 from polymarket_agent.filtering.filters import MarketFilter
 from polymarket_agent.config import FilterConfig
-from polymarket_agent.bias_detection.models import BiasCategory, ClassifiedMarket
+from polymarket_agent.bias_detection.models import BiasCategory, BiasClassification, ClassifiedMarket
 from polymarket_agent.bias_detection.classifier import classify_market
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,7 @@ class BiasScanner:
             min_volume=self.config.min_volume,
             min_liquidity=self.config.min_liquidity,
             max_days_to_expiry=self.config.max_days_to_expiry,
+            always_include_keywords=self.config.always_include_keywords,
         )
         market_filter = MarketFilter(filter_config)
         result = market_filter.apply(markets)
@@ -122,6 +124,7 @@ class BiasScanner:
             Dictionary mapping categories to sorted lists of markets.
         """
         groups: dict[BiasCategory, list[ClassifiedMarket]] = {
+            BiasCategory.ALWAYS_MONITORED: [],
             BiasCategory.POLITICAL: [],
             BiasCategory.PROGRESSIVE_SOCIAL: [],
             BiasCategory.CRYPTO_OPTIMISM: [],
@@ -147,16 +150,49 @@ class BiasScanner:
         Returns:
             Dictionary of bias categories to ranked lists of markets.
         """
-        # Fetch
         markets = await self.fetch_markets()
-
-        # Filter
         filtered = self.filter_markets(markets)
 
-        # Classify
-        classified = await self.classify_markets(filtered)
+        # Split into always-monitored pool (no LLM) and normal pool (LLM classified).
+        always_pool: list[Market] = []
+        normal_pool: list[Market] = []
+        if self.config.always_include_keywords:
+            pattern = re.compile(
+                "|".join(re.escape(k) for k in self.config.always_include_keywords),
+                re.IGNORECASE,
+            )
+            for m in filtered:
+                searchable = " ".join(filter(None, [
+                    m.question, m.description, m.event_title, " ".join(m.tags),
+                ]))
+                (always_pool if pattern.search(searchable) else normal_pool).append(m)
+        else:
+            normal_pool = filtered
 
-        # Group and rank
-        grouped = self.group_by_category(classified)
+        # Always-monitored: wrap directly — no LLM call.
+        always_classified = [
+            ClassifiedMarket(
+                market=m,
+                classification=BiasClassification(
+                    market_id=m.id,
+                    dominated_by_bias=True,
+                    categories=[BiasCategory.ALWAYS_MONITORED],
+                    bias_score=0,
+                    mispricing_direction="n/a",
+                    european=False,
+                    spain=False,
+                    reasoning="Always monitored — included without LLM classification.",
+                ),
+            )
+            for m in always_pool
+        ]
+        logger.info(f"Always-monitored pool: {len(always_classified)} markets (no LLM)")
 
-        return grouped
+        # Normal pool: LLM classify, then cap at max_reported_markets.
+        normal_classified = await self.classify_markets(normal_pool)
+        cap = self.config.max_reported_markets
+        if len(normal_classified) > cap:
+            logger.info(f"Capping normal classified markets: {len(normal_classified)} -> {cap}")
+            normal_classified = normal_classified[:cap]
+
+        return self.group_by_category(always_classified + normal_classified)
