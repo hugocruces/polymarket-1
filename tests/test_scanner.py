@@ -46,8 +46,8 @@ class TestBiasScannerInit:
     def test_default_config(self):
         """Test BiasScanner with default config."""
         scanner = BiasScanner()
-        assert scanner.config.min_volume == 1000
-        assert scanner.config.min_liquidity == 500
+        assert scanner.config.min_volume == 5000
+        assert scanner.config.min_liquidity == 2000
 
     def test_custom_config(self):
         """Test BiasScanner with custom config."""
