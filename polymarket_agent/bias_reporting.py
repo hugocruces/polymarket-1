@@ -108,8 +108,8 @@ def generate_bias_report(
 
         lines.append(f"## {title} ({len(markets)} markets)")
         lines.append("")
-        lines.append("| Rank | Market | URL | Direction | Score | Volume | Liquidity | EU |")
-        lines.append("|------|--------|-----|-----------|-------|--------|-----------|-----|")
+        lines.append("| Rank | Market | URL | Score | Volume | Liquidity | EU |")
+        lines.append("|------|--------|-----|-------|--------|-----------|-----|")
 
         for rank, cm in enumerate(markets, 1):
             market = cm.market
@@ -128,7 +128,7 @@ def generate_bias_report(
             url_link = f"[🔗]({generate_market_url(market.slug)})"
 
             lines.append(
-                f"| {rank} | {question} | {url_link} | {classification.mispricing_direction.value} | "
+                f"| {rank} | {question} | {url_link} | "
                 f"{classification.bias_score} | {format_currency(market.volume)} | "
                 f"{format_currency(market.liquidity)} | {eu_flag} |"
             )

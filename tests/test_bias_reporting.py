@@ -9,7 +9,6 @@ from polymarket_agent.bias_detection.models import (
     BiasClassification,
     ClassificationFailure,
     ClassifiedMarket,
-    MispricingDirection,
 )
 from polymarket_agent.data_fetching.models import Market, Outcome
 
@@ -34,7 +33,6 @@ def sample_grouped_markets():
         dominated_by_bias=True,
         categories=[BiasCategory.POLITICAL],
         bias_score=75,
-        mispricing_direction=MispricingDirection.UNDERPRICED,
         european=False,
         spain=False,
         reasoning="Left-favorable outcome",
@@ -57,7 +55,6 @@ def sample_grouped_markets():
         dominated_by_bias=True,
         categories=[BiasCategory.POLITICAL],
         bias_score=72,
-        mispricing_direction=MispricingDirection.UNDERPRICED,
         european=True,
         spain=True,
         reasoning="Spanish politics, left-leaning",
@@ -132,8 +129,11 @@ class TestGenerateBiasReport:
         content = output_path.read_text()
         assert "## Political Bias" in content
         assert "Will Democrats win the Senate?" in content
-        assert "underpriced" in content
         assert "75" in content  # bias score
+        # Direction is explicitly not reported — bias presence only.
+        assert "Direction" not in content
+        assert "underpriced" not in content
+        assert "overpriced" not in content
 
     def test_contains_spain_flag(self, sample_grouped_markets, tmp_path):
         """Test that Spain market has flag."""

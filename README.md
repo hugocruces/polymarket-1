@@ -16,9 +16,12 @@ The scanner identifies markets affected by three bias categories:
 
 For each market, an LLM classifies:
 - Which bias categories apply
-- Whether the likely mispricing is "overpriced" or "underpriced"
 - A bias strength score (0-100)
 - Whether it's a European market (cross-cutting tag, useful for non-US analysis)
+
+The scanner intentionally does not call the direction of any mispricing —
+that judgment is left to the human reviewing the report. The LLM only flags
+whether bias could be present.
 
 The output is a markdown report organized by bias category, with markets ranked by bias strength.
 
@@ -87,17 +90,19 @@ The scanner produces a markdown report with:
 
 - **Header** — Scan timestamp and filter settings
 - **Sections by bias category** — Each non-empty category gets a section
-- **Market tables** — Question, current prices, bias score, mispricing direction, volume/liquidity
+- **Market tables** — Question, bias score, volume/liquidity, link
 - **European flags** — Markets tagged as European
+- **Classification Failures** — Markets whose LLM classification errored,
+  surfaced so silent drops don't masquerade as "no bias"
 
 Example output:
 
 ```markdown
 ## Political Bias (3 markets)
 
-| Market | Yes Price | Bias Score | Direction | Volume | Liquidity |
-|--------|-----------|------------|-----------|--------|-----------|
-| Will Democrats win the Senate? | 45% | 75 | underpriced | $100K | $25K |
+| Market | Bias Score | Volume | Liquidity |
+|--------|------------|--------|-----------|
+| Will Democrats win the Senate? | 75 | $100K | $25K |
 ```
 
 ## Project Structure
@@ -105,23 +110,22 @@ Example output:
 ```
 polymarket_agent/
   scan.py                 CLI entry point
-  scanner.py              BiasScanner orchestrator
+  scanner.py              BiasScanner orchestrator, ScanResult
   scanner_config.py       ScannerConfig dataclass
   config.py               LLM models and API endpoints
   bias_detection/
-    models.py             BiasCategory, BiasClassification, ClassifiedMarket
-    classifier.py         LLM classification prompts and parsing
+    models.py             BiasCategory, BiasClassification, ClassificationFailure
+    classifier.py         LLM prompts, Pydantic validation, parsing
   bias_reporting.py       Markdown report generation
   data_fetching/
     gamma_api.py          Polymarket Gamma API client
-    clob_api.py           Polymarket CLOB API client
     models.py             Market, Outcome, Event models
   filtering/
     filters.py            Market filtering utilities
   llm_assessment/
-    providers.py          Anthropic, OpenAI, Google LLM clients
+    providers.py          LLM clients with retry/backoff (Anthropic, OpenAI, Google)
 
-tests/                    89 unit tests
+tests/                    unit tests
 ```
 
 ## Limitations
@@ -138,7 +142,7 @@ This tool is for research and educational purposes. It identifies potential bias
 ## Testing
 
 ```bash
-pytest tests/           # Run all 89 tests
+pytest tests/           # Run all tests
 pytest tests/ -v        # Verbose output
 pytest tests/ -k bias   # Run only bias-related tests
 ```

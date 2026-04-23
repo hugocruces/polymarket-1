@@ -14,7 +14,6 @@ from polymarket_agent.bias_detection.models import (
     BiasCategory,
     BiasClassification,
     ClassificationError,
-    MispricingDirection,
 )
 from polymarket_agent.data_fetching.models import Market
 from polymarket_agent.llm_assessment.providers import get_llm_client
@@ -42,13 +41,14 @@ The Polymarket user base has the following characteristics:
 
 ## Your Task
 
-Analyze markets to identify if they are susceptible to these biases and estimate the direction of potential mispricing.
+Analyze markets to identify whether they are susceptible to these biases.
+Do NOT try to call the direction of any mispricing — that judgment is made
+later by a human reviewer. Just identify whether bias could be present.
 
 Respond with a JSON object containing:
 - dominated_by_bias: boolean indicating if bias significantly affects this market
 - categories: list of bias categories (political, progressive_social, crypto_optimism)
 - bias_score: 0-100 indicating strength of bias effect
-- mispricing_direction: "overpriced", "underpriced", or "unclear"
 - european: boolean indicating if this is a European-focused topic
 - spain: boolean indicating if this is Spain-specific
 - reasoning: explanation of your analysis
@@ -72,7 +72,6 @@ Provide your analysis as a JSON object with the following fields:
 - dominated_by_bias (boolean)
 - categories (list of strings: "political", "progressive_social", "crypto_optimism")
 - bias_score (integer 0-100)
-- mispricing_direction ("overpriced", "underpriced", or "unclear")
 - european (boolean)
 - spain (boolean)
 - reasoning (string)
@@ -98,7 +97,6 @@ class _LLMBiasResponse(BaseModel):
     dominated_by_bias: bool
     categories: list[BiasCategory] = Field(default_factory=list)
     bias_score: int = Field(ge=0, le=100)
-    mispricing_direction: MispricingDirection
     european: bool
     spain: bool
     reasoning: str
@@ -120,15 +118,6 @@ class _LLMBiasResponse(BaseModel):
                 raise ValueError(f"unknown category: {item!r}")
             out.append(_CATEGORY_ALIASES[key])
         return out
-
-    @field_validator("mispricing_direction", mode="before")
-    @classmethod
-    def _normalize_direction(cls, value: object) -> object:
-        if isinstance(value, MispricingDirection):
-            return value
-        if isinstance(value, str):
-            return value.lower().strip()
-        return value
 
 
 def build_system_prompt() -> str:
@@ -212,7 +201,6 @@ def parse_classification_response(response: str, market_id: str) -> BiasClassifi
         dominated_by_bias=parsed.dominated_by_bias,
         categories=parsed.categories,
         bias_score=parsed.bias_score,
-        mispricing_direction=parsed.mispricing_direction,
         european=parsed.european,
         spain=parsed.spain,
         reasoning=parsed.reasoning,

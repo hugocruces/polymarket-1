@@ -10,7 +10,6 @@ from polymarket_agent.bias_detection.models import (
     BiasCategory,
     BiasClassification,
     ClassificationError,
-    MispricingDirection,
 )
 
 
@@ -78,7 +77,6 @@ class TestBiasScannerClassifyMarkets:
                 dominated_by_bias=True,
                 categories=[BiasCategory.POLITICAL],
                 bias_score=75,
-                mispricing_direction=MispricingDirection.UNDERPRICED,
                 european=False,
                 spain=False,
                 reasoning="Left-favorable",
@@ -88,7 +86,6 @@ class TestBiasScannerClassifyMarkets:
                 dominated_by_bias=False,
                 categories=[],
                 bias_score=0,
-                mispricing_direction=MispricingDirection.UNCLEAR,
                 european=False,
                 spain=False,
                 reasoning="No bias detected",
@@ -121,7 +118,6 @@ class TestBiasScannerClassifyMarkets:
                 dominated_by_bias=True,
                 categories=[BiasCategory.CRYPTO_OPTIMISM],
                 bias_score=80,
-                mispricing_direction=MispricingDirection.OVERPRICED,
                 european=False,
                 spain=False,
                 reasoning="Crypto",

@@ -14,7 +14,6 @@ from polymarket_agent.bias_detection.models import (
     ClassificationError,
     ClassificationFailure,
     ClassifiedMarket,
-    MispricingDirection,
 )
 from polymarket_agent.config import FilterConfig
 from polymarket_agent.data_fetching.gamma_api import fetch_active_markets
@@ -220,7 +219,6 @@ class BiasScanner:
                     dominated_by_bias=True,
                     categories=[BiasCategory.ALWAYS_MONITORED],
                     bias_score=0,
-                    mispricing_direction=MispricingDirection.NOT_APPLICABLE,
                     european=False,
                     spain=False,
                     reasoning="Always monitored — included without LLM classification.",
