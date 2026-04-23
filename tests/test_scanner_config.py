@@ -14,7 +14,7 @@ class TestScannerConfig:
         assert config.min_volume == 5000
         assert config.min_liquidity == 2000
         assert config.max_days_to_expiry == 90
-        assert config.llm_model == "claude-haiku-4-5"
+        assert config.llm_model == "claude-sonnet-4-6"
         assert config.max_markets == 500
         assert config.output_dir == "output"
         assert config.verbose is False

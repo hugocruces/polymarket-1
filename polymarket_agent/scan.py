@@ -9,7 +9,7 @@ Usage:
 Examples:
     python -m polymarket_agent.scan
     python -m polymarket_agent.scan --min-volume 50000 --min-liquidity 10000
-    python -m polymarket_agent.scan --model claude-sonnet-4-5 --output reports/scan.md
+    python -m polymarket_agent.scan --model claude-sonnet-4-6 --output reports/scan.md
 """
 
 import argparse
@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
 Examples:
   %(prog)s
   %(prog)s --min-volume 50000 --min-liquidity 10000
-  %(prog)s --model claude-sonnet-4-5 --output reports/scan.md
+  %(prog)s --model claude-sonnet-4-6 --output reports/scan.md
         """,
     )
 
@@ -59,8 +59,8 @@ Examples:
     parser.add_argument(
         "--model", "-m",
         choices=list(LLM_MODELS.keys()),
-        default="claude-haiku-4-5",
-        help="LLM model for classification (default: claude-haiku-4-5)",
+        default="claude-sonnet-4-6",
+        help="LLM model for classification (default: claude-sonnet-4-6)",
     )
     parser.add_argument(
         "--max-markets",

@@ -11,7 +11,7 @@ Usage:
     python -m polymarket_agent.scan [OPTIONS]
 
 Example:
-    python -m polymarket_agent.scan --min-volume 50000 --model claude-sonnet-4-5
+    python -m polymarket_agent.scan --min-volume 50000 --model claude-sonnet-4-6
 """
 
 from polymarket_agent.scanner import BiasScanner

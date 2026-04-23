@@ -55,7 +55,7 @@ python -m polymarket_agent.scan
 python -m polymarket_agent.scan --min-volume 50000 --min-liquidity 10000
 
 # Use a specific model
-python -m polymarket_agent.scan --model claude-sonnet-4-5
+python -m polymarket_agent.scan --model claude-sonnet-4-6
 ```
 
 Output is saved to `output/bias_scan_<timestamp>.md`.
@@ -63,26 +63,22 @@ Output is saved to `output/bias_scan_<timestamp>.md`.
 ## CLI Options
 
 ```
---min-volume      Minimum trading volume in USD (default: 1000)
---min-liquidity   Minimum liquidity in USD (default: 500)
+--min-volume      Minimum trading volume in USD (default: 5000)
+--min-liquidity   Minimum liquidity in USD (default: 2000)
 --max-days        Maximum days to resolution (default: 90)
---model, -m       LLM model for classification (default: claude-haiku-4-5)
+--model, -m       LLM model for classification (default: claude-sonnet-4-6)
 --max-markets     Maximum markets to fetch (default: 500)
+--max-reported    Cap on LLM-classified markets in the report (default: 20)
 --output, -o      Output file path
 --verbose, -v     Enable verbose logging
 ```
 
-### Available Models
+### Supported Providers
 
-| Provider  | Model                    | Notes                        |
-| --------- | ------------------------ | ---------------------------- |
-| Anthropic | `claude-haiku-4-5`       | Fast, cheap (default)        |
-| Anthropic | `claude-sonnet-4-5`      | Better quality               |
-| Anthropic | `claude-opus-4-5`        | Highest quality              |
-| OpenAI    | `gpt-5.2`                | Flagship                     |
-| OpenAI    | `gpt-5-mini`             | Fast                         |
-| Google    | `gemini-3-pro-preview`   | Strong alternative           |
-| Google    | `gemini-3-flash-preview` | Cheapest                     |
+The scanner works with any of Anthropic, OpenAI, or Google — pick the
+provider you have an API key for. The exact model aliases accepted by
+`--model` are defined in `polymarket_agent/config.py:LLM_MODELS`; run
+`python -m polymarket_agent.scan --help` to see the current list.
 
 ## Output Format
 
@@ -98,11 +94,11 @@ The scanner produces a markdown report with:
 Example output:
 
 ```markdown
-## Political Bias (3 markets)
+## Political Bias (1 markets)
 
-| Market | Bias Score | Volume | Liquidity |
-|--------|------------|--------|-----------|
-| Will Democrats win the Senate? | 75 | $100K | $25K |
+| Rank | Market | URL | Score | Volume | Liquidity | EU |
+|------|--------|-----|-------|--------|-----------|-----|
+| 1 | Will Democrats win the Senate? | [🔗](https://polymarket.com/market/democrat-win) | 75 | $100K | $25K |  |
 ```
 
 ## Project Structure

@@ -44,8 +44,14 @@ DEFAULT_MAX_DAYS_TO_EXPIRY = 90  # Maximum days until market resolution
 # LLM Model mappings
 LLM_MODELS = {
     # ==========================================================================
-    # Anthropic Claude Models (Latest)
+    # Anthropic Claude Models
     # ==========================================================================
+    "claude-sonnet-4-6": {
+        "provider": LLMProvider.ANTHROPIC,
+        "model_id": "claude-sonnet-4-6",
+        "display_name": "Claude Sonnet 4.6",
+        "max_tokens": 64000,
+    },
     "claude-sonnet-4-5": {
         "provider": LLMProvider.ANTHROPIC,
         "model_id": "claude-sonnet-4-5-20250929",
@@ -99,7 +105,7 @@ LLM_MODELS = {
 }
 
 # Default model
-DEFAULT_LLM_MODEL = "claude-sonnet-4-5"
+DEFAULT_LLM_MODEL = "claude-sonnet-4-6"
 
 
 @dataclass
