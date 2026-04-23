@@ -1,19 +1,42 @@
 """Bias scanner for Polymarket."""
 
-import asyncio
 import logging
 import re
+from dataclasses import dataclass, field
 from typing import Optional
 
-from polymarket_agent.scanner_config import ScannerConfig
-from polymarket_agent.data_fetching.models import Market
-from polymarket_agent.data_fetching.gamma_api import fetch_active_markets
-from polymarket_agent.filtering.filters import MarketFilter
-from polymarket_agent.config import FilterConfig
-from polymarket_agent.bias_detection.models import BiasCategory, BiasClassification, ClassifiedMarket
+import httpx
+
 from polymarket_agent.bias_detection.classifier import classify_market
+from polymarket_agent.bias_detection.models import (
+    BiasCategory,
+    BiasClassification,
+    ClassificationError,
+    ClassificationFailure,
+    ClassifiedMarket,
+)
+from polymarket_agent.config import FilterConfig
+from polymarket_agent.data_fetching.gamma_api import fetch_active_markets
+from polymarket_agent.data_fetching.models import Market
+from polymarket_agent.filtering.filters import MarketFilter
+from polymarket_agent.scanner_config import ScannerConfig
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ScanResult:
+    """Full output of a scan run.
+
+    Attributes:
+        grouped: Successfully classified markets grouped by bias category.
+        failures: Markets whose LLM classification failed and were excluded
+            from `grouped`. Surfaced so silent drops don't masquerade as
+            "no bias detected".
+    """
+
+    grouped: dict[BiasCategory, list[ClassifiedMarket]]
+    failures: list[ClassificationFailure] = field(default_factory=list)
 
 
 class BiasScanner:
@@ -29,8 +52,8 @@ class BiasScanner:
     Example:
         >>> config = ScannerConfig(min_volume=50000)
         >>> scanner = BiasScanner(config)
-        >>> grouped = await scanner.run()
-        >>> for category, markets in grouped.items():
+        >>> result = await scanner.run()
+        >>> for category, markets in result.grouped.items():
         ...     print(f"{category.value}: {len(markets)} markets")
     """
 
@@ -78,7 +101,7 @@ class BiasScanner:
     async def classify_markets(
         self,
         markets: list[Market],
-    ) -> list[ClassifiedMarket]:
+    ) -> tuple[list[ClassifiedMarket], list[ClassificationFailure]]:
         """
         Classify markets with LLM for bias potential.
 
@@ -86,29 +109,49 @@ class BiasScanner:
             markets: List of markets to classify.
 
         Returns:
-            List of ClassifiedMarket objects that have bias potential.
+            Tuple of (classified markets with bias, classification failures).
+            Failures are returned separately rather than being silently
+            dropped so callers can surface them.
         """
-        classified = []
+        classified: list[ClassifiedMarket] = []
+        failures: list[ClassificationFailure] = []
         total = len(markets)
 
         for i, market in enumerate(markets):
+            logger.debug(f"Classifying market {i+1}/{total}: {market.question[:50]}...")
             try:
-                logger.debug(f"Classifying market {i+1}/{total}: {market.question[:50]}...")
                 classification = await classify_market(
                     market,
                     model=self.config.llm_model,
                 )
-                if classification.dominated_by_bias:
-                    classified.append(ClassifiedMarket(
-                        market=market,
-                        classification=classification,
-                    ))
-                    logger.debug(f"  -> Bias detected: {classification.categories}")
-            except Exception as e:
-                logger.error(f"Failed to classify market {market.id}: {e}")
+            except ClassificationError as e:
+                logger.warning(f"Classification error for market {market.id}: {e}")
+                failures.append(ClassificationFailure(market=market, error=str(e)))
+                continue
+            except (httpx.HTTPError, httpx.TimeoutException) as e:
+                logger.warning(f"HTTP error classifying market {market.id}: {e}")
+                failures.append(
+                    ClassificationFailure(market=market, error=f"HTTP error: {e}")
+                )
+                continue
+            except (ImportError, ValueError) as e:
+                # ImportError: provider SDK not installed.
+                # ValueError: unknown model. Both are configuration errors
+                # that will recur for every market — fail fast.
+                logger.error(f"Fatal configuration error: {e}")
+                raise
 
-        logger.info(f"Classified {len(classified)} markets with bias potential out of {total}")
-        return classified
+            if classification.dominated_by_bias:
+                classified.append(
+                    ClassifiedMarket(market=market, classification=classification)
+                )
+                logger.debug(f"  -> Bias detected: {classification.categories}")
+
+        logger.info(
+            f"Classified {len(classified)} markets with bias potential, "
+            f"{len(failures)} failed, out of {total}"
+        )
+        return classified, failures
 
     def group_by_category(
         self,
@@ -134,7 +177,6 @@ class BiasScanner:
             for category in cm.classification.categories:
                 groups[category].append(cm)
 
-        # Sort each group by bias_score descending
         for category in groups:
             groups[category].sort(
                 key=lambda x: x.classification.bias_score,
@@ -143,12 +185,12 @@ class BiasScanner:
 
         return groups
 
-    async def run(self) -> dict[BiasCategory, list[ClassifiedMarket]]:
+    async def run(self) -> ScanResult:
         """
         Run the full scan pipeline.
 
         Returns:
-            Dictionary of bias categories to ranked lists of markets.
+            ScanResult with grouped markets and any classification failures.
         """
         markets = await self.fetch_markets()
         filtered = self.filter_markets(markets)
@@ -169,7 +211,6 @@ class BiasScanner:
         else:
             normal_pool = filtered
 
-        # Always-monitored: wrap directly — no LLM call.
         always_classified = [
             ClassifiedMarket(
                 market=m,
@@ -178,7 +219,6 @@ class BiasScanner:
                     dominated_by_bias=True,
                     categories=[BiasCategory.ALWAYS_MONITORED],
                     bias_score=0,
-                    mispricing_direction="n/a",
                     european=False,
                     spain=False,
                     reasoning="Always monitored — included without LLM classification.",
@@ -188,11 +228,13 @@ class BiasScanner:
         ]
         logger.info(f"Always-monitored pool: {len(always_classified)} markets (no LLM)")
 
-        # Normal pool: LLM classify, then cap at max_reported_markets.
-        normal_classified = await self.classify_markets(normal_pool)
+        normal_classified, failures = await self.classify_markets(normal_pool)
         cap = self.config.max_reported_markets
         if len(normal_classified) > cap:
-            logger.info(f"Capping normal classified markets: {len(normal_classified)} -> {cap}")
+            logger.info(
+                f"Capping normal classified markets: {len(normal_classified)} -> {cap}"
+            )
             normal_classified = normal_classified[:cap]
 
-        return self.group_by_category(always_classified + normal_classified)
+        grouped = self.group_by_category(always_classified + normal_classified)
+        return ScanResult(grouped=grouped, failures=failures)

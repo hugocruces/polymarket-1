@@ -17,17 +17,23 @@ class BiasCategory(Enum):
     ALWAYS_MONITORED = "always_monitored"
 
 
+class ClassificationError(Exception):
+    """Raised when an LLM response cannot be parsed into a BiasClassification."""
+
+
 @dataclass
 class BiasClassification:
     """Classification of a market's susceptibility to demographic biases.
+
+    The classifier only flags whether a bias is present — it does not try to
+    call the direction of any mispricing. That judgment is left to the human
+    reviewing the report.
 
     Attributes:
         market_id: Unique identifier for the market.
         dominated_by_bias: Whether the market is significantly affected by bias.
         categories: List of bias categories affecting this market.
         bias_score: Score from 0-100 indicating strength of bias effect.
-        mispricing_direction: Expected direction of mispricing due to bias
-            ("overpriced", "underpriced", or "unclear").
         european: Whether the market topic is European-focused.
         spain: Whether the market topic is Spain-specific.
         reasoning: Explanation of the bias classification.
@@ -37,10 +43,20 @@ class BiasClassification:
     dominated_by_bias: bool
     categories: list[BiasCategory]
     bias_score: int
-    mispricing_direction: str
     european: bool
     spain: bool
     reasoning: str
+
+
+@dataclass
+class ClassificationFailure:
+    """A market whose LLM classification failed.
+
+    Surfaced in reporting so silent drops don't masquerade as no-bias.
+    """
+
+    market: Market
+    error: str
 
 
 @dataclass
