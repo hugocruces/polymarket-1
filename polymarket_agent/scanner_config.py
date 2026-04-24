@@ -1,4 +1,11 @@
-"""Configuration for the bias scanner."""
+"""Configuration for the bias scanner.
+
+All runtime-configurable values live on :class:`ScannerConfig`. Every
+field is required except ``always_include_keywords`` — values must come
+from ``config.yaml`` or CLI flags, not from Python-level defaults. This
+keeps a single source of truth for what a "default" value is:
+``./config.yaml`` at the repo root.
+"""
 
 from __future__ import annotations
 
@@ -33,15 +40,22 @@ _DEFAULT_ALWAYS_INCLUDE_KEYWORDS = [
 ]
 
 
+class MissingConfigError(ValueError):
+    """Raised when required configuration values are not provided by any source."""
+
+
 @dataclass
 class ScannerConfig:
-    """
-    Configuration for the Polymarket bias scanner.
+    """Configuration for the Polymarket bias scanner.
 
-    Values come from three sources, highest precedence first:
-        1. CLI flags (see polymarket_agent/scan.py)
-        2. config.yaml (see load_yaml_config)
-        3. The defaults on this dataclass
+    Every field is required. Values must come from ``config.yaml`` or
+    CLI flags. The only exception is ``always_include_keywords``, which
+    defaults to a baked-in list because it's long and rarely overridden.
+
+    Precedence when built through :func:`polymarket_agent.scan.build_config`,
+    highest first:
+        1. CLI flags
+        2. ``config.yaml``
 
     Attributes:
         min_volume: Minimum trading volume in USD.
@@ -57,14 +71,14 @@ class ScannerConfig:
             all other filters and the LLM classification step.
     """
 
-    min_volume: float = 5000
-    min_liquidity: float = 2000
-    max_days_to_expiry: int = 90
-    llm_model: str = "claude-sonnet-4-6"
-    max_markets: int = 500
-    max_reported_markets: int = 20
-    output_dir: str = "output"
-    verbose: bool = False
+    min_volume: float
+    min_liquidity: float
+    max_days_to_expiry: int
+    llm_model: str
+    max_markets: int
+    max_reported_markets: int
+    output_dir: str
+    verbose: bool
     always_include_keywords: list[str] = field(
         default_factory=lambda: list(_DEFAULT_ALWAYS_INCLUDE_KEYWORDS)
     )
@@ -72,16 +86,14 @@ class ScannerConfig:
     def with_overrides(self, overrides: dict[str, Any]) -> "ScannerConfig":
         """Return a copy with the given overrides applied.
 
-        Unknown keys are logged and ignored. Keys with a value of ``None``
-        are treated as "not set" and skipped, which lets callers pass a
-        dict of partial overrides without clobbering existing values.
+        Unknown keys are logged and ignored. Keys whose value is ``None``
+        are skipped, which lets callers pass a dict of partial overrides
+        without clobbering existing values.
         """
         known = {f.name for f in fields(self)}
         unknown = set(overrides) - known
         if unknown:
-            logger.warning(
-                f"Ignoring unknown config keys: {sorted(unknown)}"
-            )
+            logger.warning(f"Ignoring unknown config keys: {sorted(unknown)}")
         applied = {
             k: v for k, v in overrides.items()
             if k in known and v is not None
@@ -112,3 +124,40 @@ def load_yaml_config(path: str | Path) -> dict[str, Any]:
             f"got {type(data).__name__}"
         )
     return data
+
+
+def build_scanner_config(
+    yaml_values: dict[str, Any] | None = None,
+    cli_values: dict[str, Any] | None = None,
+) -> ScannerConfig:
+    """Merge YAML and CLI values into a ScannerConfig.
+
+    CLI values take precedence over YAML values. Required fields that
+    are absent from both sources raise :class:`MissingConfigError`.
+    """
+    required = {
+        f.name for f in fields(ScannerConfig)
+        if f.name != "always_include_keywords"
+    }
+
+    merged: dict[str, Any] = {}
+    if yaml_values:
+        merged.update({k: v for k, v in yaml_values.items() if v is not None})
+    if cli_values:
+        merged.update({k: v for k, v in cli_values.items() if v is not None})
+
+    known = {f.name for f in fields(ScannerConfig)}
+    unknown = set(merged) - known
+    if unknown:
+        logger.warning(f"Ignoring unknown config keys: {sorted(unknown)}")
+    merged = {k: v for k, v in merged.items() if k in known}
+
+    missing = sorted(required - set(merged))
+    if missing:
+        raise MissingConfigError(
+            "Missing required configuration values: "
+            + ", ".join(missing)
+            + ". Provide them via config.yaml or CLI flags."
+        )
+
+    return ScannerConfig(**merged)

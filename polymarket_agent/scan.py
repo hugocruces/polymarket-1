@@ -27,7 +27,12 @@ from pathlib import Path
 from polymarket_agent.bias_reporting import generate_bias_report
 from polymarket_agent.config import LLM_MODELS
 from polymarket_agent.scanner import BiasScanner
-from polymarket_agent.scanner_config import ScannerConfig, load_yaml_config
+from polymarket_agent.scanner_config import (
+    MissingConfigError,
+    ScannerConfig,
+    build_scanner_config,
+    load_yaml_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +112,13 @@ Examples:
              "Always-monitored markets are exempt from this cap.",
     )
     parser.add_argument(
+        "--output-dir",
+        dest="output_dir",
+        type=str,
+        default=argparse.SUPPRESS,
+        help="Directory for auto-named reports (default from YAML/config: output)",
+    )
+    parser.add_argument(
         "--output", "-o",
         type=str,
         default=None,
@@ -115,32 +127,40 @@ Examples:
     parser.add_argument(
         "--verbose", "-v",
         dest="verbose",
-        action="store_const",
-        const=True,
+        action=argparse.BooleanOptionalAction,
         default=argparse.SUPPRESS,
-        help="Enable verbose logging",
+        help="Enable verbose logging (use --no-verbose to force off)",
     )
 
     return parser.parse_args()
 
 
 def build_config(args: argparse.Namespace) -> ScannerConfig:
-    """Compose a ScannerConfig from defaults, YAML, and CLI args."""
-    config = ScannerConfig()
+    """Compose a ScannerConfig from YAML and CLI args.
 
+    Every required field must be provided by at least one of the two
+    sources, otherwise :class:`MissingConfigError` is raised.
+    """
     yaml_path: Path = args.config
     explicit_yaml = yaml_path != DEFAULT_CONFIG_PATH
+
+    yaml_values: dict[str, object] = {}
     if yaml_path.exists():
         logger.info(f"Loading config from {yaml_path}")
-        config = config.with_overrides(load_yaml_config(yaml_path))
+        yaml_values = load_yaml_config(yaml_path)
     elif explicit_yaml:
         raise FileNotFoundError(
             f"Config file not found: {yaml_path}. "
-            f"Pass --config with a valid path, or remove the flag to use defaults."
+            f"Pass --config with a valid path, or remove the flag to fall "
+            f"back to CLI-only configuration."
         )
 
-    cli_overrides = {k: v for k, v in vars(args).items() if k != "config" and k != "output"}
-    return config.with_overrides(cli_overrides)
+    cli_values = {
+        k: v for k, v in vars(args).items()
+        if k not in {"config", "output"}
+    }
+
+    return build_scanner_config(yaml_values=yaml_values, cli_values=cli_values)
 
 
 async def main_async() -> int:
@@ -160,7 +180,14 @@ async def main_async() -> int:
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         )
 
-    config = build_config(args)
+    try:
+        config = build_config(args)
+    except MissingConfigError as e:
+        print(f"\nConfiguration error: {e}", file=sys.stderr)
+        return 2
+    except FileNotFoundError as e:
+        print(f"\n{e}", file=sys.stderr)
+        return 2
 
     if not logging.getLogger().handlers:
         logging.basicConfig(

@@ -13,6 +13,27 @@ from polymarket_agent.bias_detection.models import (
 )
 
 
+def _make_config(**overrides) -> ScannerConfig:
+    """Build a valid ScannerConfig, overriding any fields the caller cares about."""
+    base = dict(
+        min_volume=5000,
+        min_liquidity=2000,
+        max_days_to_expiry=90,
+        llm_model="claude-sonnet-4-6",
+        max_markets=500,
+        max_reported_markets=20,
+        output_dir="output",
+        verbose=False,
+    )
+    base.update(overrides)
+    return ScannerConfig(**base)
+
+
+@pytest.fixture
+def config():
+    return _make_config()
+
+
 @pytest.fixture
 def sample_markets():
     """Create sample markets for testing."""
@@ -47,15 +68,14 @@ def sample_markets():
 class TestBiasScannerInit:
     """Tests for BiasScanner initialization."""
 
-    def test_default_config(self):
-        """Test BiasScanner with default config."""
-        scanner = BiasScanner()
-        assert scanner.config.min_volume == 5000
-        assert scanner.config.min_liquidity == 2000
+    def test_requires_explicit_config(self):
+        """BiasScanner no longer falls back to dataclass defaults."""
+        with pytest.raises(TypeError):
+            BiasScanner()  # type: ignore[call-arg]
 
     def test_custom_config(self):
         """Test BiasScanner with custom config."""
-        config = ScannerConfig(min_volume=50000, llm_model="claude-sonnet-4-5")
+        config = _make_config(min_volume=50000, llm_model="claude-sonnet-4-5")
         scanner = BiasScanner(config)
         assert scanner.config.min_volume == 50000
         assert scanner.config.llm_model == "claude-sonnet-4-5"
@@ -67,8 +87,7 @@ class TestBiasScannerClassifyMarkets:
     @pytest.mark.asyncio
     async def test_classify_markets_returns_biased_only(self, sample_markets):
         """Test that classify_markets only returns markets with bias."""
-        config = ScannerConfig()
-        scanner = BiasScanner(config)
+        scanner = BiasScanner(_make_config())
 
         # First market has bias, second doesn't
         mock_classifications = [
@@ -108,8 +127,7 @@ class TestBiasScannerClassifyMarkets:
     async def test_classify_markets_surfaces_failures(self, sample_markets):
         """ClassificationError should be caught and surfaced as a failure,
         not dropped silently as if the market had no bias."""
-        config = ScannerConfig()
-        scanner = BiasScanner(config)
+        scanner = BiasScanner(_make_config())
 
         side_effects = [
             ClassificationError("bad JSON"),
@@ -138,8 +156,7 @@ class TestBiasScannerClassifyMarkets:
     @pytest.mark.asyncio
     async def test_classify_markets_reraises_config_errors(self, sample_markets):
         """Unknown-model / missing-SDK errors should fail fast, not be swallowed."""
-        config = ScannerConfig()
-        scanner = BiasScanner(config)
+        scanner = BiasScanner(_make_config())
 
         with patch('polymarket_agent.scanner.classify_market') as mock_classify:
             mock_classify.side_effect = ValueError("Unknown model: gpt-99")
@@ -153,7 +170,7 @@ class TestBiasScannerGroupByCategory:
 
     def test_groups_by_category(self, sample_markets):
         """Test that markets are grouped by their bias categories."""
-        scanner = BiasScanner()
+        scanner = BiasScanner(_make_config())
 
         classified = [
             MagicMock(
@@ -180,7 +197,7 @@ class TestBiasScannerGroupByCategory:
 
     def test_sorts_by_bias_score(self, sample_markets):
         """Test that markets within a category are sorted by bias score."""
-        scanner = BiasScanner()
+        scanner = BiasScanner(_make_config())
 
         classified = [
             MagicMock(
@@ -207,7 +224,7 @@ class TestBiasScannerGroupByCategory:
 
     def test_market_in_multiple_categories(self, sample_markets):
         """Test that a market can appear in multiple categories."""
-        scanner = BiasScanner()
+        scanner = BiasScanner(_make_config())
 
         classified = [
             MagicMock(

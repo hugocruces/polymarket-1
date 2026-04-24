@@ -104,9 +104,6 @@ LLM_MODELS = {
     },
 }
 
-# Default model
-DEFAULT_LLM_MODEL = "claude-sonnet-4-6"
-
 
 @dataclass
 class FilterConfig:

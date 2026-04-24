@@ -63,30 +63,51 @@ Output is saved to `output/bias_scan_<timestamp>.md`.
 ## CLI Options
 
 ```
---config PATH     YAML config file (default: ./config.yaml if present)
---min-volume      Minimum trading volume in USD
---min-liquidity   Minimum liquidity in USD
---max-days        Maximum days to resolution
---model, -m       LLM model alias for classification
---max-markets     Maximum markets to fetch from API
---max-reported    Cap on LLM-classified markets in the report
---output, -o      Output file path (overrides auto-naming)
---verbose, -v     Enable verbose logging
+--config PATH       YAML config file (default: ./config.yaml if present)
+--min-volume        Minimum trading volume in USD
+--min-liquidity     Minimum liquidity in USD
+--max-days          Maximum days to resolution
+--model, -m         LLM model alias for classification
+--max-markets       Maximum markets to fetch from API
+--max-reported      Cap on LLM-classified markets in the report
+--output-dir        Directory for auto-named reports
+--output, -o        Output file path (overrides auto-naming for this run)
+--verbose / --no-verbose   Toggle verbose logging
 ```
 
 ## Configuration
 
-Three sources feed `ScannerConfig`, highest precedence first:
+Two sources feed `ScannerConfig`, highest precedence first:
 
 1. **CLI flags** (e.g. `--min-volume 50000`) — always win
 2. **`config.yaml`** — auto-loaded from `./config.yaml`, or pass `--config PATH`
-3. **Built-in defaults** on `ScannerConfig` (in `polymarket_agent/scanner_config.py`)
+
+There are **no Python-level defaults**. Every required field must be
+provided by at least one of the two sources. If both are silent on a
+required field, the scanner aborts with a `MissingConfigError` listing
+exactly what's missing.
+
+The one exception is `always_include_keywords`, which keeps a baked-in
+default list in `scanner_config.py` because it's long and rarely
+overridden. YAML or CLI can still replace it.
+
+You can run in either mode:
+
+- **YAML-only** (typical): keep `config.yaml`, run `python -m polymarket_agent.scan`.
+- **CLI-only**: delete or rename `config.yaml` and pass every flag
+  explicitly, e.g.:
+  ```bash
+  python -m polymarket_agent.scan \
+    --min-volume 5000 --min-liquidity 2000 --max-days 90 \
+    --model claude-sonnet-4-6 --max-markets 500 --max-reported 20 \
+    --output-dir output --no-verbose
+  ```
+- **Mixed**: keep YAML for defaults, add CLI flags to override on a given run.
 
 Unknown keys in the YAML are logged and ignored, so stale entries can't
 silently take effect. The YAML schema is flat — keys must match
-`ScannerConfig` field names exactly. Run `python -m polymarket_agent.scan --help`
-for the authoritative flag list and see `config.yaml` at the repo root
-for the commented schema.
+`ScannerConfig` field names exactly. See `config.yaml` at the repo root
+for the commented schema, or run `python -m polymarket_agent.scan --help`.
 
 API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`) are
 read from `.env` or the environment — they never live in `config.yaml`.

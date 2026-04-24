@@ -3,7 +3,6 @@
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Optional
 
 import httpx
 
@@ -57,14 +56,16 @@ class BiasScanner:
         ...     print(f"{category.value}: {len(markets)} markets")
     """
 
-    def __init__(self, config: Optional[ScannerConfig] = None):
+    def __init__(self, config: ScannerConfig):
         """
         Initialize the scanner.
 
         Args:
-            config: Scanner configuration. Uses defaults if not provided.
+            config: Scanner configuration. Build one via
+                :func:`polymarket_agent.scanner_config.build_scanner_config`
+                when running from the CLI.
         """
-        self.config = config or ScannerConfig()
+        self.config = config
 
     async def fetch_markets(self) -> list[Market]:
         """
