@@ -1,27 +1,17 @@
-"""
-Filtering Module
-
-Provides functionality to filter markets based on various criteria.
-"""
+"""Market filtering for the bias scanner."""
 
 from polymarket_agent.filtering.filters import (
+    FilterResult,
     MarketFilter,
-    apply_filters,
-    filter_by_category,
-    filter_by_keywords,
-    filter_by_volume,
-    filter_by_liquidity,
     filter_by_expiry,
-    filter_by_geography,
+    filter_by_liquidity,
+    filter_by_volume,
 )
 
 __all__ = [
+    "FilterResult",
     "MarketFilter",
-    "apply_filters",
-    "filter_by_category",
-    "filter_by_keywords",
-    "filter_by_volume",
-    "filter_by_liquidity",
     "filter_by_expiry",
-    "filter_by_geography",
+    "filter_by_liquidity",
+    "filter_by_volume",
 ]

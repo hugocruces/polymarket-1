@@ -179,7 +179,7 @@ class AnthropicClient(LLMClient):
     Docs: https://docs.anthropic.com/
     """
 
-    def __init__(self, model: str = "claude-sonnet-4-5", api_key: Optional[str] = None):
+    def __init__(self, model: str = "claude-sonnet-4-6", api_key: Optional[str] = None):
         super().__init__(model, api_key)
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
         self._client = None
@@ -425,7 +425,7 @@ class GoogleClient(LLMClient):
 
 
 def get_llm_client(
-    model: str = "claude-sonnet-4-5",
+    model: str = "claude-sonnet-4-6",
     api_key: Optional[str] = None,
 ) -> LLMClient:
     """
@@ -434,7 +434,7 @@ def get_llm_client(
     Automatically selects the correct provider based on the model name.
 
     Args:
-        model: Model identifier (e.g., "claude-sonnet-4-5", "gpt-5.2", "gemini-2.5-flash")
+        model: Model identifier (e.g., "claude-sonnet-4-6", "gpt-5.2", "gemini-2.5-flash")
         api_key: Optional API key (uses environment variable if not provided)
 
     Returns:
@@ -444,7 +444,7 @@ def get_llm_client(
         ValueError: If model is not recognized
 
     Example:
-        >>> client = get_llm_client("claude-sonnet-4-5")
+        >>> client = get_llm_client("claude-sonnet-4-6")
         >>> response = await client.complete("Hello, world!")
     """
     if model not in LLM_MODELS:

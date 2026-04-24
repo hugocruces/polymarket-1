@@ -11,7 +11,7 @@ Usage:
     python -m polymarket_agent.scan [OPTIONS]
 
 Example:
-    python -m polymarket_agent.scan --min-volume 50000 --model claude-sonnet-4-5
+    python -m polymarket_agent.scan --min-volume 50000 --model claude-sonnet-4-6
 """
 
 from polymarket_agent.scanner import BiasScanner
@@ -21,7 +21,7 @@ from polymarket_agent.bias_detection.models import (
     BiasClassification,
     ClassifiedMarket,
 )
-from polymarket_agent.config import FilterConfig, LLM_MODELS
+from polymarket_agent.config import LLM_MODELS
 
 __version__ = "2.0.0"
 __author__ = "Polymarket Bias Scanner Team"
@@ -32,6 +32,5 @@ __all__ = [
     "BiasCategory",
     "BiasClassification",
     "ClassifiedMarket",
-    "FilterConfig",
     "LLM_MODELS",
 ]

@@ -9,7 +9,12 @@ Usage:
 Examples:
     python -m polymarket_agent.scan
     python -m polymarket_agent.scan --min-volume 50000 --min-liquidity 10000
-    python -m polymarket_agent.scan --model claude-sonnet-4-5 --output reports/scan.md
+    python -m polymarket_agent.scan --model claude-sonnet-4-6 --output reports/scan.md
+
+Configuration precedence (highest wins):
+    1. CLI flags
+    2. config.yaml (auto-loaded from ./config.yaml, override with --config PATH)
+    3. Defaults on ScannerConfig
 """
 
 import argparse
@@ -19,14 +24,30 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from polymarket_agent.scanner_config import ScannerConfig
-from polymarket_agent.scanner import BiasScanner
 from polymarket_agent.bias_reporting import generate_bias_report
 from polymarket_agent.config import LLM_MODELS
+from polymarket_agent.scanner import BiasScanner
+from polymarket_agent.scanner_config import (
+    MissingConfigError,
+    ScannerConfig,
+    build_scanner_config,
+    load_yaml_config,
+)
+
+logger = logging.getLogger(__name__)
+
+
+DEFAULT_CONFIG_PATH = Path("config.yaml")
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse command line arguments."""
+    """Parse command line arguments.
+
+    Flags default to argparse.SUPPRESS so the returned namespace only
+    contains the flags the user explicitly set. That lets us overlay CLI
+    values on top of YAML values without the CLI's defaults clobbering
+    the YAML.
+    """
     parser = argparse.ArgumentParser(
         description="Polymarket Bias Scanner - Find markets with demographic bias potential",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -34,60 +55,112 @@ def parse_args() -> argparse.Namespace:
 Examples:
   %(prog)s
   %(prog)s --min-volume 50000 --min-liquidity 10000
-  %(prog)s --model claude-sonnet-4-5 --output reports/scan.md
+  %(prog)s --model claude-sonnet-4-6 --output reports/scan.md
+  %(prog)s --config my-config.yaml
         """,
     )
 
     parser.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_CONFIG_PATH,
+        help="Path to YAML config file (default: ./config.yaml). "
+             "If the default path is missing, built-in defaults are used. "
+             "If an explicit --config path is missing, the scan aborts.",
+    )
+    parser.add_argument(
         "--min-volume",
+        dest="min_volume",
         type=float,
-        default=5000,
-        help="Minimum trading volume in USD (default: 5000)",
+        default=argparse.SUPPRESS,
+        help="Minimum trading volume in USD (default from YAML/config: 5000)",
     )
     parser.add_argument(
         "--min-liquidity",
+        dest="min_liquidity",
         type=float,
-        default=2000,
-        help="Minimum liquidity in USD (default: 2000)",
+        default=argparse.SUPPRESS,
+        help="Minimum liquidity in USD (default from YAML/config: 2000)",
     )
     parser.add_argument(
         "--max-days",
+        dest="max_days_to_expiry",
         type=int,
-        default=90,
-        help="Maximum days to resolution (default: 90)",
+        default=argparse.SUPPRESS,
+        help="Maximum days to resolution (default from YAML/config: 90)",
     )
     parser.add_argument(
         "--model", "-m",
+        dest="llm_model",
         choices=list(LLM_MODELS.keys()),
-        default="claude-haiku-4-5",
-        help="LLM model for classification (default: claude-haiku-4-5)",
+        default=argparse.SUPPRESS,
+        help="LLM model for classification (default from YAML/config: claude-sonnet-4-6)",
     )
     parser.add_argument(
         "--max-markets",
+        dest="max_markets",
         type=int,
-        default=500,
-        help="Maximum markets to fetch from API (default: 500)",
+        default=argparse.SUPPRESS,
+        help="Maximum markets to fetch from API (default from YAML/config: 500)",
     )
     parser.add_argument(
         "--max-reported",
+        dest="max_reported_markets",
         type=int,
-        default=20,
-        help="Maximum normal (LLM-classified) markets to include in report (default: 20). "
+        default=argparse.SUPPRESS,
+        help="Cap on LLM-classified markets in the report (default from YAML/config: 20). "
              "Always-monitored markets are exempt from this cap.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        dest="output_dir",
+        type=str,
+        default=argparse.SUPPRESS,
+        help="Directory for auto-named reports (default from YAML/config: output)",
     )
     parser.add_argument(
         "--output", "-o",
         type=str,
         default=None,
-        help="Output file path (default: output/bias_scan_<timestamp>.md)",
+        help="Output file path (default: <output_dir>/bias_scan_<timestamp>.md)",
     )
     parser.add_argument(
         "--verbose", "-v",
-        action="store_true",
-        help="Enable verbose logging",
+        dest="verbose",
+        action=argparse.BooleanOptionalAction,
+        default=argparse.SUPPRESS,
+        help="Enable verbose logging (use --no-verbose to force off)",
     )
 
     return parser.parse_args()
+
+
+def build_config(args: argparse.Namespace) -> ScannerConfig:
+    """Compose a ScannerConfig from YAML and CLI args.
+
+    Every required field must be provided by at least one of the two
+    sources, otherwise :class:`MissingConfigError` is raised.
+    """
+    yaml_path: Path = args.config
+    explicit_yaml = yaml_path != DEFAULT_CONFIG_PATH
+
+    yaml_values: dict[str, object] = {}
+    if yaml_path.exists():
+        logger.info(f"Loading config from {yaml_path}")
+        yaml_values = load_yaml_config(yaml_path)
+    elif explicit_yaml:
+        raise FileNotFoundError(
+            f"Config file not found: {yaml_path}. "
+            f"Pass --config with a valid path, or remove the flag to fall "
+            f"back to CLI-only configuration."
+        )
+
+    cli_values = {
+        k: v for k, v in vars(args).items()
+        if k not in {"config", "output"}
+    }
+
+    return build_scanner_config(yaml_values=yaml_values, cli_values=cli_values)
 
 
 async def main_async() -> int:
@@ -99,23 +172,28 @@ async def main_async() -> int:
     """
     args = parse_args()
 
-    # Setup logging
-    level = logging.DEBUG if args.verbose else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
+    # Verbose logging requested via CLI should take effect immediately —
+    # otherwise "Loading config from ..." etc. happen before logging is set up.
+    if getattr(args, "verbose", False):
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        )
 
-    # Build config
-    config = ScannerConfig(
-        min_volume=args.min_volume,
-        min_liquidity=args.min_liquidity,
-        max_days_to_expiry=args.max_days,
-        llm_model=args.model,
-        max_markets=args.max_markets,
-        max_reported_markets=args.max_reported,
-        verbose=args.verbose,
-    )
+    try:
+        config = build_config(args)
+    except MissingConfigError as e:
+        print(f"\nConfiguration error: {e}", file=sys.stderr)
+        return 2
+    except FileNotFoundError as e:
+        print(f"\n{e}", file=sys.stderr)
+        return 2
+
+    if not logging.getLogger().handlers:
+        logging.basicConfig(
+            level=logging.DEBUG if config.verbose else logging.INFO,
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        )
 
     # Print header
     print("\n" + "=" * 60)
@@ -145,7 +223,7 @@ async def main_async() -> int:
         output_path = Path(args.output)
     else:
         timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-        output_path = Path("output") / f"bias_scan_{timestamp}.md"
+        output_path = Path(config.output_dir) / f"bias_scan_{timestamp}.md"
 
     report_path = generate_bias_report(
         grouped_markets=grouped,

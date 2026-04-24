@@ -20,8 +20,6 @@ import httpx
 from polymarket_agent.config import (
     GAMMA_EVENTS_ENDPOINT,
     GAMMA_MARKETS_ENDPOINT,
-    DEFAULT_PAGE_SIZE,
-    DEFAULT_MAX_MARKETS,
 )
 from polymarket_agent.data_fetching.models import Event, Market, Outcome
 
@@ -31,6 +29,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_TIMEOUT = 30.0
 MAX_RETRIES = 3
 RETRY_DELAY = 1.0
+
+# Pagination limits
+_DEFAULT_PAGE_SIZE = 100
+_DEFAULT_MAX_MARKETS = 500
 
 
 class GammaAPIError(Exception):
@@ -281,7 +283,7 @@ def _parse_event(data: dict) -> Event:
 
 
 async def fetch_active_events(
-    limit: int = DEFAULT_MAX_MARKETS,
+    limit: int = _DEFAULT_MAX_MARKETS,
     offset: int = 0,
     order: str = "volume",
     ascending: bool = False,
@@ -312,7 +314,7 @@ async def fetch_active_events(
     """
     events = []
     current_offset = offset
-    page_size = min(limit, DEFAULT_PAGE_SIZE)
+    page_size = min(limit, _DEFAULT_PAGE_SIZE)
     
     async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
         while len(events) < limit:
@@ -371,7 +373,7 @@ async def fetch_active_events(
 
 
 async def fetch_active_markets(
-    limit: int = DEFAULT_MAX_MARKETS,
+    limit: int = _DEFAULT_MAX_MARKETS,
     offset: int = 0,
     order: str = "volume",
     ascending: bool = False,
@@ -401,7 +403,7 @@ async def fetch_active_markets(
     """
     markets = []
     current_offset = offset
-    page_size = min(limit, DEFAULT_PAGE_SIZE)
+    page_size = min(limit, _DEFAULT_PAGE_SIZE)
     
     async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
         while len(markets) < limit:
@@ -478,7 +480,7 @@ async def fetch_market_details(market_id: str) -> Optional[Market]:
 
 
 def fetch_active_events_sync(
-    limit: int = DEFAULT_MAX_MARKETS,
+    limit: int = _DEFAULT_MAX_MARKETS,
     **kwargs,
 ) -> list[Event]:
     """
@@ -490,7 +492,7 @@ def fetch_active_events_sync(
 
 
 def fetch_active_markets_sync(
-    limit: int = DEFAULT_MAX_MARKETS,
+    limit: int = _DEFAULT_MAX_MARKETS,
     **kwargs,
 ) -> list[Market]:
     """

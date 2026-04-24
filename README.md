@@ -55,7 +55,7 @@ python -m polymarket_agent.scan
 python -m polymarket_agent.scan --min-volume 50000 --min-liquidity 10000
 
 # Use a specific model
-python -m polymarket_agent.scan --model claude-sonnet-4-5
+python -m polymarket_agent.scan --model claude-sonnet-4-6
 ```
 
 Output is saved to `output/bias_scan_<timestamp>.md`.
@@ -63,26 +63,61 @@ Output is saved to `output/bias_scan_<timestamp>.md`.
 ## CLI Options
 
 ```
---min-volume      Minimum trading volume in USD (default: 1000)
---min-liquidity   Minimum liquidity in USD (default: 500)
---max-days        Maximum days to resolution (default: 90)
---model, -m       LLM model for classification (default: claude-haiku-4-5)
---max-markets     Maximum markets to fetch (default: 500)
---output, -o      Output file path
---verbose, -v     Enable verbose logging
+--config PATH       YAML config file (default: ./config.yaml if present)
+--min-volume        Minimum trading volume in USD
+--min-liquidity     Minimum liquidity in USD
+--max-days          Maximum days to resolution
+--model, -m         LLM model alias for classification
+--max-markets       Maximum markets to fetch from API
+--max-reported      Cap on LLM-classified markets in the report
+--output-dir        Directory for auto-named reports
+--output, -o        Output file path (overrides auto-naming for this run)
+--verbose / --no-verbose   Toggle verbose logging
 ```
 
-### Available Models
+## Configuration
 
-| Provider  | Model                    | Notes                        |
-| --------- | ------------------------ | ---------------------------- |
-| Anthropic | `claude-haiku-4-5`       | Fast, cheap (default)        |
-| Anthropic | `claude-sonnet-4-5`      | Better quality               |
-| Anthropic | `claude-opus-4-5`        | Highest quality              |
-| OpenAI    | `gpt-5.2`                | Flagship                     |
-| OpenAI    | `gpt-5-mini`             | Fast                         |
-| Google    | `gemini-3-pro-preview`   | Strong alternative           |
-| Google    | `gemini-3-flash-preview` | Cheapest                     |
+Two sources feed `ScannerConfig`, highest precedence first:
+
+1. **CLI flags** (e.g. `--min-volume 50000`) — always win
+2. **`config.yaml`** — auto-loaded from `./config.yaml`, or pass `--config PATH`
+
+There are **no Python-level defaults**. Every required field must be
+provided by at least one of the two sources. If both are silent on a
+required field, the scanner aborts with a `MissingConfigError` listing
+exactly what's missing.
+
+The one exception is `always_include_keywords`, which keeps a baked-in
+default list in `scanner_config.py` because it's long and rarely
+overridden. YAML or CLI can still replace it.
+
+You can run in either mode:
+
+- **YAML-only** (typical): keep `config.yaml`, run `python -m polymarket_agent.scan`.
+- **CLI-only**: delete or rename `config.yaml` and pass every flag
+  explicitly, e.g.:
+  ```bash
+  python -m polymarket_agent.scan \
+    --min-volume 5000 --min-liquidity 2000 --max-days 90 \
+    --model claude-sonnet-4-6 --max-markets 500 --max-reported 20 \
+    --output-dir output --no-verbose
+  ```
+- **Mixed**: keep YAML for defaults, add CLI flags to override on a given run.
+
+Unknown keys in the YAML are logged and ignored, so stale entries can't
+silently take effect. The YAML schema is flat — keys must match
+`ScannerConfig` field names exactly. See `config.yaml` at the repo root
+for the commented schema, or run `python -m polymarket_agent.scan --help`.
+
+API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`) are
+read from `.env` or the environment — they never live in `config.yaml`.
+
+### Supported Providers
+
+The scanner works with any of Anthropic, OpenAI, or Google — pick the
+provider you have an API key for. The exact model aliases accepted by
+`--model` are defined in `polymarket_agent/config.py:LLM_MODELS`; run
+`python -m polymarket_agent.scan --help` to see the current list.
 
 ## Output Format
 
@@ -98,11 +133,11 @@ The scanner produces a markdown report with:
 Example output:
 
 ```markdown
-## Political Bias (3 markets)
+## Political Bias (1 markets)
 
-| Market | Bias Score | Volume | Liquidity |
-|--------|------------|--------|-----------|
-| Will Democrats win the Senate? | 75 | $100K | $25K |
+| Rank | Market | URL | Score | Volume | Liquidity | EU |
+|------|--------|-----|-------|--------|-----------|-----|
+| 1 | Will Democrats win the Senate? | [🔗](https://polymarket.com/market/democrat-win) | 75 | $100K | $25K |  |
 ```
 
 ## Project Structure
