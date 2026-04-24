@@ -14,7 +14,6 @@ from polymarket_agent.bias_detection.models import (
     ClassificationFailure,
     ClassifiedMarket,
 )
-from polymarket_agent.config import FilterConfig
 from polymarket_agent.data_fetching.gamma_api import fetch_active_markets
 from polymarket_agent.data_fetching.models import Market
 from polymarket_agent.filtering.filters import MarketFilter
@@ -80,7 +79,7 @@ class BiasScanner:
 
     def filter_markets(self, markets: list[Market]) -> list[Market]:
         """
-        Apply volume/liquidity filters to markets.
+        Apply volume/liquidity/expiry filters to markets.
 
         Args:
             markets: List of markets to filter.
@@ -88,13 +87,12 @@ class BiasScanner:
         Returns:
             Filtered list of markets meeting criteria.
         """
-        filter_config = FilterConfig(
+        market_filter = MarketFilter(
             min_volume=self.config.min_volume,
             min_liquidity=self.config.min_liquidity,
             max_days_to_expiry=self.config.max_days_to_expiry,
             always_include_keywords=self.config.always_include_keywords,
         )
-        market_filter = MarketFilter(filter_config)
         result = market_filter.apply(markets)
         logger.info(f"Filtered {result.total_before} -> {result.total_after} markets")
         return result.markets
