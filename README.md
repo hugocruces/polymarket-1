@@ -63,15 +63,33 @@ Output is saved to `output/bias_scan_<timestamp>.md`.
 ## CLI Options
 
 ```
---min-volume      Minimum trading volume in USD (default: 5000)
---min-liquidity   Minimum liquidity in USD (default: 2000)
---max-days        Maximum days to resolution (default: 90)
---model, -m       LLM model for classification (default: claude-sonnet-4-6)
---max-markets     Maximum markets to fetch (default: 500)
---max-reported    Cap on LLM-classified markets in the report (default: 20)
---output, -o      Output file path
+--config PATH     YAML config file (default: ./config.yaml if present)
+--min-volume      Minimum trading volume in USD
+--min-liquidity   Minimum liquidity in USD
+--max-days        Maximum days to resolution
+--model, -m       LLM model alias for classification
+--max-markets     Maximum markets to fetch from API
+--max-reported    Cap on LLM-classified markets in the report
+--output, -o      Output file path (overrides auto-naming)
 --verbose, -v     Enable verbose logging
 ```
+
+## Configuration
+
+Three sources feed `ScannerConfig`, highest precedence first:
+
+1. **CLI flags** (e.g. `--min-volume 50000`) — always win
+2. **`config.yaml`** — auto-loaded from `./config.yaml`, or pass `--config PATH`
+3. **Built-in defaults** on `ScannerConfig` (in `polymarket_agent/scanner_config.py`)
+
+Unknown keys in the YAML are logged and ignored, so stale entries can't
+silently take effect. The YAML schema is flat — keys must match
+`ScannerConfig` field names exactly. Run `python -m polymarket_agent.scan --help`
+for the authoritative flag list and see `config.yaml` at the repo root
+for the commented schema.
+
+API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`) are
+read from `.env` or the environment — they never live in `config.yaml`.
 
 ### Supported Providers
 
